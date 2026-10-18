@@ -14,7 +14,8 @@ Column {
         switch (symbol) {
         case "search_off": return "ghostish"
         case "music_note": return "heart"
-        case "lyrics": return "bun"
+        case "lyrics":
+        case "mic": return "bun"
         case "queue_music": return "clamShell"
         case "push_pin": return "clover4"
         case "album": return "sunny"

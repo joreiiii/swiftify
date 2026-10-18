@@ -27,7 +27,7 @@ StyledMenu {
         visible: !root.local
         height: visible ? implicitHeight : 0
         text: root.saved ? "Remove from Songs" : "Save to Songs"
-        symbol: root.saved ? "star" : "star"
+        symbol: root.saved ? "check_circle" : "add_circle"
         onTriggered: {
             if (!root.saved) {
                 UiState.burst(saveItem, "hearts")

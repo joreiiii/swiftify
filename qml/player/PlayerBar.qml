@@ -428,7 +428,7 @@ Item {
         IconButton {
             anchors.verticalCenter: parent.verticalCenter
             scheme: root.scheme
-            symbol: "lyrics"
+            symbol: "mic"
             size: root.buttonSize
             iconSize: root.tiny ? 18 : 20
             toggled: Player.showingLyrics
@@ -438,12 +438,19 @@ Item {
         IconButton {
             anchors.verticalCenter: parent.verticalCenter
             scheme: root.scheme
-            symbol: "queue_music"
+            id: queueButton
             size: root.buttonSize
             iconSize: root.tiny ? 18 : 20
             toggled: Player.showingQueue
             tooltip: "Playing Next"
             onClicked: Player.toggleQueuePanel()
+
+            QueueGlyph {
+                anchors.centerIn: parent
+                size: queueButton.iconSize
+                color: queueButton.iconColor
+                filled: queueButton.toggled
+            }
         }
         VolumeControl {
             anchors.verticalCenter: parent.verticalCenter

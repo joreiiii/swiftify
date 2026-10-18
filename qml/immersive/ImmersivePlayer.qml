@@ -272,7 +272,7 @@ FocusScope {
             currentIndex: root.panels.indexOf(root.panel)
             segments: [
                 Segment { symbol: "image"; tooltip: "Artwork" },
-                Segment { symbol: "lyrics"; tooltip: "Lyrics"; enabled: root.lyricsAvailable },
+                Segment { symbol: "mic"; tooltip: "Lyrics"; enabled: root.lyricsAvailable },
                 Segment { symbol: "queue_music"; tooltip: "Playing Next" },
                 Segment { symbol: "bedtime"; tooltip: "Sleep Timer" },
                 Segment { symbol: "tune"; tooltip: "Sound" }

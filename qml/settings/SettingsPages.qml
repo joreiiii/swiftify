@@ -741,7 +741,7 @@ Item {
                         spacing: 2
 
                         StyledText {
-                            text: "Swiftify " + App.version
+                            text: "Swiftify (Spotify Accurate, Modded by jorei_)"
                             font.weight: Font.Medium
 
                             TapHandler {

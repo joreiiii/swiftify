@@ -242,6 +242,9 @@ bind = , XF86AudioPlay, exec, swiftify --play-pause
 - The bell and friends popups grow out of their buttons and stay put while the pointer moves.
 - Mouse-wheel scrolling moves further per notch.
 - New defaults: visualizers off, shapes off, reduced motion on, window controls on the right.
+- One typeface throughout: headings are the same face as the rest of the UI, just larger and bolder, instead of the round, wide variable-axis titles.
+- Spotify's icons for saving a song (a plus in a circle, a green check once saved), for lyrics (a microphone) and for the queue (a box over two lines).
+- The start screen says "Swiftify (Modded)" and Settings → About says "Swiftify (Spotify Accurate, Modded by jorei_)".
 
 ### Windows fixes
 - Builds with MSVC and Qt 6.10. The code needs Qt 6.10 for `final` properties, not 6.9.

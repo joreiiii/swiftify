@@ -51,7 +51,7 @@ Item {
 
         TitleText {
             anchors.horizontalCenter: parent.horizontalCenter
-            text: "Swiftify"
+            text: "Swiftify (Modded)"
             font.pixelSize: Appearance.fontSize.headline
             font.weight: Font.Bold
         }

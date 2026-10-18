@@ -257,7 +257,7 @@ T.AbstractButton {
                 anchors.verticalCenter: parent.verticalCenter
                 // a file of the person's own cannot be saved to spotify
                 visible: !root.song.isLocalFile
-                symbol: "star"
+                symbol: root.saved ? "check_circle" : "add_circle"
                 toggled: root.saved
                 size: 28
                 iconSize: 18

@@ -204,7 +204,6 @@ Item {
                         text: root.positional(root.remaining)
                         pixelSize: 40
                         weight: Font.Bold
-                        rounded: true
                         color: "white"
                     }
                     StyledText {

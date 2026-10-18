@@ -10,8 +10,6 @@ Row {
     property string text
     property real pixelSize: Appearance.fontSize.normal
     property int weight: Font.Normal
-    /// drawn round, as a title is (TitleText)
-    property bool rounded: false
     property color color: Appearance.colors.onSurface
     /// new characters arrive from above, as a falling count does
     property bool countsDown: true
@@ -45,7 +43,6 @@ Row {
                 tabularNumbers: true
                 font.pixelSize: root.pixelSize
                 font.weight: root.weight
-                font.variableAxes: root.rounded ? ({ "ROND": 100, "wdth": 110, "wght": 720 }) : ({})
                 color: root.color
             }
             // set by hand, not bound, so the old character is still here to roll away
@@ -56,7 +53,6 @@ Row {
                 tabularNumbers: true
                 font.pixelSize: root.pixelSize
                 font.weight: root.weight
-                font.variableAxes: root.rounded ? ({ "ROND": 100, "wdth": 110, "wght": 720 }) : ({})
                 color: root.color
             }
 
