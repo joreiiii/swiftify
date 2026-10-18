@@ -58,7 +58,6 @@ SongListPage {
                 iconOnly: parent ? parent.compactActions : false
                 compactSize: parent ? parent.actionSize : 48
                 implicitHeight: iconOnly ? compactSize : 48
-                wavy: true
                 symbol: "play_arrow"
                 burst: "play"
                 text: "Play"
@@ -72,7 +71,6 @@ SongListPage {
                 iconOnly: parent ? parent.compactActions : false
                 compactSize: parent ? parent.actionSize : 48
                 implicitHeight: iconOnly ? compactSize : 48
-                wavy: true
                 symbol: "shuffle"
                 burst: "play"
                 text: "Shuffle"

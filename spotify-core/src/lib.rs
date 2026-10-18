@@ -24,6 +24,7 @@ use librespot::{
 use serde::Serialize;
 use tokio::{sync::watch, time::timeout};
 
+mod connect_presence;
 mod dsp;
 mod file_playback;
 pub mod local;
@@ -91,6 +92,8 @@ struct SpotifyState {
     /// the output sink files play through. the backing outputstream is leaked so the
     /// sink keeps a live device connection without breaking send on the state.
     local_sink: Option<Arc<output::LocalOutput>>,
+    /// the session's spotify connect device, reporting what plays
+    presence: Option<tokio::task::JoinHandle<()>>,
 }
 
 impl Default for SpotifyState {
@@ -105,6 +108,7 @@ impl Default for SpotifyState {
             audio_cache: None,
             local_playback: None,
             local_sink: None,
+            presence: None,
         }
     }
 }
@@ -212,6 +216,8 @@ pub struct SpotifyCore {
     local_playback_active: Arc<AtomicBool>,
     /// shared with every sink this core builds, streaming and files alike.
     output_health: OutputHealth,
+    /// what the app says plays, for the spotify connect device
+    now_playing: watch::Sender<connect_presence::NowPlaying>,
 }
 
 impl Default for SpotifyCore {
@@ -233,6 +239,7 @@ impl SpotifyCore {
             timeline: Arc::new(Mutex::new(PlaybackTimeline::default())),
             local_playback_active: Arc::new(AtomicBool::new(false)),
             output_health: OutputHealth::new(),
+            now_playing: watch::Sender::new(connect_presence::NowPlaying::default()),
         }
     }
 
@@ -366,6 +373,12 @@ impl SpotifyCore {
             let _switching = self.lock_switching();
             let mut state = self.lock_state()?;
             mixer.set_volume((state.volume * VolumeCtrl::MAX_VOLUME as f32).round() as u16);
+            if let Some(previous) = state.presence.replace(connect_presence::start(
+                session.clone(),
+                self.now_playing.subscribe(),
+            )) {
+                previous.abort();
+            }
             state.session = Some(session);
             state.mixer = Some(mixer);
             (state.player.replace(player), state.standby_player.replace(standby))
@@ -387,6 +400,9 @@ impl SpotifyCore {
         self.clear_local_playback();
         let players = self.lock_state().ok().map(|mut state| {
             let players = (state.player.take(), state.standby_player.take());
+            if let Some(presence) = state.presence.take() {
+                presence.abort();
+            }
             state.session = None;
             state.mixer = None;
             state.local_sink = None;
@@ -402,6 +418,26 @@ impl SpotifyCore {
         }
         self.spectrum.set_enabled(false);
         self.reset_timeline();
+    }
+
+    /// what plays, as the app has it, for spotify connect: the track's uri
+    /// (empty for none, or a file of the person's own), whether it plays,
+    /// where in it and how long it is. spotify hears of a change of song,
+    /// a pause or a seek; playing on is no change
+    pub fn report_playback(&self, uri: String, playing: bool, position_ms: u32, duration_ms: u32) {
+        let next = connect_presence::NowPlaying {
+            uri,
+            playing,
+            position_ms,
+            duration_ms,
+        };
+        self.now_playing.send_if_modified(|current| {
+            if *current == next {
+                return false;
+            }
+            *current = next;
+            true
+        });
     }
 
     /// one gain per band, in decibels, in the order equalizer_frequencies
@@ -1010,6 +1046,36 @@ impl SpotifyCore {
     /// web api no longer gives the songs of
     pub async fn playlist_json(&self, playlist_uri: String) -> Result<String, String> {
         playlist::playlist_json(&self.session()?, &playlist_uri).await
+    }
+
+    /// what the people the person follows are listening to, as spotify's
+    /// desktop app shows it (its buddylist), as json
+    pub async fn friends_json(&self) -> Result<String, String> {
+        let bytes = self
+            .session()?
+            .spclient()
+            .request_as_json(&http::Method::GET, "/presence-view/v1/buddylist", None, None)
+            .await
+            .map_err(|error| format!("Spotify would not send friend activity: {error}"))?;
+        String::from_utf8(bytes.to_vec()).map_err(|error| format!("friend activity is not text: {error}"))
+    }
+
+    /// songs like a track, from spotify's radio, shaped like `playlist_json`'s
+    /// page. `previous` is a comma-separated list of track uris to leave out;
+    /// `autoplay` asks for what plays on once a queue runs out
+    pub async fn station_json(
+        &self,
+        seed_uri: String,
+        previous: String,
+        autoplay: bool,
+    ) -> Result<String, String> {
+        let previous: Vec<String> = previous
+            .split(',')
+            .map(str::trim)
+            .filter(|uri| !uri.is_empty())
+            .map(str::to_owned)
+            .collect();
+        playlist::station_json(&self.session()?, &seed_uri, &previous, autoplay).await
     }
 
     pub fn spectrum_levels(&self) -> Vec<f32> {

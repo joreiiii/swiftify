@@ -4,6 +4,7 @@
 #include "theme/Theme.h"
 
 #include <QApplication>
+#include <QQuickItem>
 #include <QImage>
 #include <QPlatformSurfaceEvent>
 #include <QQuickWindow>
@@ -16,6 +17,7 @@
 #include <windowsx.h>
 #include <commctrl.h>
 #include <dwmapi.h>
+#include <shellapi.h>
 #include <shobjidl.h>
 
 #include <roapi.h>
@@ -105,6 +107,67 @@ struct WindowsIntegration::Native {
         if (ownsCom) CoUninitialize();
     }
 
+    /// the work area of the monitor the window is on, less a pixel on any
+    /// edge an auto-hidden taskbar waits at: a window that covers the whole
+    /// monitor would keep it from showing (windows takes it for a full
+    /// screen game)
+    static RECT maximizedBounds(HWND window, RECT *monitorBounds = nullptr)
+    {
+        MONITORINFO monitor {sizeof(MONITORINFO)};
+        RECT bounds {};
+        if (!GetMonitorInfoW(MonitorFromWindow(window, MONITOR_DEFAULTTONEAREST), &monitor)) {
+            GetWindowRect(window, &bounds);
+            return bounds;
+        }
+        bounds = monitor.rcWork;
+        if (monitorBounds) {
+            *monitorBounds = monitor.rcMonitor;
+        }
+        const auto autoHidden = [&](UINT edge) {
+            APPBARDATA bar {sizeof(APPBARDATA)};
+            bar.uEdge = edge;
+            bar.rc = monitor.rcMonitor;
+            return SHAppBarMessage(ABM_GETAUTOHIDEBAREX, &bar) != 0;
+        };
+        if (autoHidden(ABE_BOTTOM)) bounds.bottom -= 1;
+        else if (autoHidden(ABE_TOP)) bounds.top += 1;
+        else if (autoHidden(ABE_LEFT)) bounds.left += 1;
+        else if (autoHidden(ABE_RIGHT)) bounds.right -= 1;
+        return bounds;
+    }
+
+    /// the resize border under the pointer, or HTNOWHERE
+    static LRESULT resizeEdge(HWND window, LPARAM lParam, WindowsIntegration *integration)
+    {
+        RECT bounds {};
+        if (!GetWindowRect(window, &bounds)) {
+            return HTNOWHERE;
+        }
+        using WindowDpi = UINT (WINAPI *)(HWND);
+        using MetricsForDpi = int (WINAPI *)(int, UINT);
+        static const auto windowDpi = reinterpret_cast<WindowDpi>(GetProcAddress(GetModuleHandleW(L"user32.dll"), "GetDpiForWindow"));
+        static const auto metricsForDpi = reinterpret_cast<MetricsForDpi>(GetProcAddress(GetModuleHandleW(L"user32.dll"), "GetSystemMetricsForDpi"));
+        const UINT dpi = windowDpi ? windowDpi(window) : qRound(96 * integration->m_window->devicePixelRatio());
+        const int border = metricsForDpi
+            ? metricsForDpi(SM_CXSIZEFRAME, dpi) + metricsForDpi(SM_CXPADDEDBORDER, dpi)
+            : GetSystemMetrics(SM_CXSIZEFRAME) + GetSystemMetrics(SM_CXPADDEDBORDER);
+        const int horizontal = GET_X_LPARAM(lParam);
+        const int vertical = GET_Y_LPARAM(lParam);
+        const bool left = horizontal >= bounds.left && horizontal < bounds.left + border;
+        const bool right = horizontal < bounds.right && horizontal >= bounds.right - border;
+        const bool top = vertical >= bounds.top && vertical < bounds.top + border;
+        const bool bottom = vertical < bounds.bottom && vertical >= bounds.bottom - border;
+        if (top && left) return HTTOPLEFT;
+        if (top && right) return HTTOPRIGHT;
+        if (bottom && left) return HTBOTTOMLEFT;
+        if (bottom && right) return HTBOTTOMRIGHT;
+        if (left) return HTLEFT;
+        if (right) return HTRIGHT;
+        if (top) return HTTOP;
+        if (bottom) return HTBOTTOM;
+        return HTNOWHERE;
+    }
+
     static LRESULT CALLBACK windowProcedure(HWND window, UINT message, WPARAM wParam, LPARAM lParam,
                                             UINT_PTR identity, DWORD_PTR context)
     {
@@ -113,43 +176,45 @@ struct WindowsIntegration::Native {
             QTimer::singleShot(0, integration, &WindowsIntegration::styleWindow);
         }
         if (integration->m_window && !(GetWindowLongPtrW(window, GWL_STYLE) & WS_CAPTION)) {
+            const bool fullScreen = integration->m_window->visibility() == QWindow::FullScreen;
             if (message == WM_NCCALCSIZE) {
-                if (IsZoomed(window)) {
+                // maximized, the window fills the work area and no more: by
+                // the monitor it is on, not the rectangle windows proposes,
+                // which reaches past the edges, onto a next monitor
+                if (IsZoomed(window) && !fullScreen) {
                     auto *bounds = wParam ? &reinterpret_cast<NCCALCSIZE_PARAMS *>(lParam)->rgrc[0]
                                          : reinterpret_cast<RECT *>(lParam);
-                    MONITORINFO monitor {sizeof(MONITORINFO)};
-                    if (GetMonitorInfoW(MonitorFromRect(bounds, MONITOR_DEFAULTTONEAREST), &monitor)) {
-                        *bounds = monitor.rcWork;
-                    }
+                    *bounds = maximizedBounds(window);
                 }
                 return 0;
             }
-            if (message == WM_NCHITTEST && !IsZoomed(window) && integration->m_window->visibility() != QWindow::FullScreen) {
-                RECT bounds {};
-                if (GetWindowRect(window, &bounds)) {
-                    using WindowDpi = UINT (WINAPI *)(HWND);
-                    using MetricsForDpi = int (WINAPI *)(int, UINT);
-                    static const auto windowDpi = reinterpret_cast<WindowDpi>(GetProcAddress(GetModuleHandleW(L"user32.dll"), "GetDpiForWindow"));
-                    static const auto metricsForDpi = reinterpret_cast<MetricsForDpi>(GetProcAddress(GetModuleHandleW(L"user32.dll"), "GetSystemMetricsForDpi"));
-                    const UINT dpi = windowDpi ? windowDpi(window) : qRound(96 * integration->m_window->devicePixelRatio());
-                    const int border = metricsForDpi
-                        ? metricsForDpi(SM_CXSIZEFRAME, dpi) + metricsForDpi(SM_CXPADDEDBORDER, dpi)
-                        : GetSystemMetrics(SM_CXSIZEFRAME) + GetSystemMetrics(SM_CXPADDEDBORDER);
-                    const int horizontal = GET_X_LPARAM(lParam);
-                    const int vertical = GET_Y_LPARAM(lParam);
-                    const bool left = horizontal >= bounds.left && horizontal < bounds.left + border;
-                    const bool right = horizontal < bounds.right && horizontal >= bounds.right - border;
-                    const bool top = vertical >= bounds.top && vertical < bounds.top + border;
-                    const bool bottom = vertical < bounds.bottom && vertical >= bounds.bottom - border;
-                    if (top && left) return HTTOPLEFT;
-                    if (top && right) return HTTOPRIGHT;
-                    if (bottom && left) return HTBOTTOMLEFT;
-                    if (bottom && right) return HTBOTTOMRIGHT;
-                    if (left) return HTLEFT;
-                    if (right) return HTRIGHT;
-                    if (top) return HTTOP;
-                    if (bottom) return HTBOTTOM;
+            if (message == WM_GETMINMAXINFO && !fullScreen) {
+                const LRESULT result = DefSubclassProc(window, message, wParam, lParam);
+                RECT monitor {};
+                const RECT work = maximizedBounds(window, &monitor);
+                if (monitor.right > monitor.left) {
+                    auto *limits = reinterpret_cast<MINMAXINFO *>(lParam);
+                    limits->ptMaxPosition = {work.left - monitor.left, work.top - monitor.top};
+                    limits->ptMaxSize = {work.right - work.left, work.bottom - work.top};
                 }
+                return result;
+            }
+            if (message == WM_NCHITTEST && !fullScreen) {
+                const LRESULT edge = IsZoomed(window) ? HTNOWHERE : resizeEdge(window, lParam, integration);
+                if (edge != HTNOWHERE) {
+                    return edge;
+                }
+                // the title bar's empty stretches are windows' own caption:
+                // it moves the window, snaps it, restores it from maximized
+                // under the pointer and maximizes it on a double click
+                POINT point {GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
+                if (ScreenToClient(window, &point)) {
+                    const qreal ratio = integration->m_window->devicePixelRatio();
+                    if (integration->isCaptionAt(QPointF(point.x / ratio, point.y / ratio))) {
+                        return HTCAPTION;
+                    }
+                }
+                return HTCLIENT;
             }
         }
         if (message == WM_COMMAND && HIWORD(wParam) == THBN_CLICKED) {
@@ -170,6 +235,84 @@ struct WindowsIntegration::Native {
         return DefSubclassProc(window, message, wParam, lParam);
     }
 };
+
+namespace {
+
+/// whether an item takes the pointer itself: a control, or an item with a
+/// tap, drag or other pointer handler (one that only watches hovering lets
+/// the pointer through, as it does in qt quick)
+bool takesPointer(const QQuickItem *item)
+{
+    if (item->acceptedMouseButtons() != Qt::NoButton) {
+        return true;
+    }
+    for (const QObject *child : item->children()) {
+        if (child->inherits("QQuickPointerHandler") && !child->inherits("QQuickHoverHandler")) {
+            return true;
+        }
+    }
+    return false;
+}
+
+enum class Hit { Nothing, Client, Caption };
+
+/// what takes the pointer at `point` (in `item`'s coordinates), looking from
+/// the top of the stack down, as qt quick delivers a press
+Hit hitAt(const QQuickItem *item, const QPointF &point)
+{
+    if (!item->isVisible() || !item->isEnabled() || item->opacity() <= 0) {
+        return Hit::Nothing;
+    }
+    const bool inside = item->contains(point);
+    if (item->clip() && !inside) {
+        return Hit::Nothing;
+    }
+    QList<QQuickItem *> children = item->childItems();
+    std::stable_sort(children.begin(), children.end(),
+                     [](const QQuickItem *a, const QQuickItem *b) { return a->z() < b->z(); });
+    for (auto child = children.crbegin(); child != children.crend(); ++child) {
+        const Hit hit = hitAt(*child, item->mapToItem(*child, point));
+        if (hit != Hit::Nothing) {
+            return hit;
+        }
+    }
+    if (!inside) {
+        return Hit::Nothing;
+    }
+    if (item->objectName() == QLatin1StringView("windowCaption")) {
+        return Hit::Caption;
+    }
+    return takesPointer(item) ? Hit::Client : Hit::Nothing;
+}
+
+} // namespace
+
+bool WindowsIntegration::isCaptionAt(const QPointF &point) const
+{
+    const auto *quick = qobject_cast<QQuickWindow *>(m_window.data());
+    if (!quick || !quick->contentItem()) {
+        return false;
+    }
+    // the content item sits in the window's root item with any popups'
+    // overlay over it
+    const QQuickItem *root = quick->contentItem()->parentItem() ? quick->contentItem()->parentItem() : quick->contentItem();
+    return hitAt(root, root->mapFromScene(point)) == Hit::Caption;
+}
+
+void WindowsIntegration::toggleMaximized(QWindow *window)
+{
+    if (!window) return;
+    // windows' own maximize, as snapping and the title bar's double click do,
+    // so windows and qt agree on what the window is
+    const HWND handle = reinterpret_cast<HWND>(window->winId());
+    ShowWindow(handle, IsZoomed(handle) ? SW_RESTORE : SW_MAXIMIZE);
+}
+
+void WindowsIntegration::minimize(QWindow *window)
+{
+    if (!window) return;
+    ShowWindow(reinterpret_cast<HWND>(window->winId()), SW_MINIMIZE);
+}
 
 void WindowsIntegration::initializeProcess()
 {
@@ -556,7 +699,10 @@ void WindowsIntegration::updateMediaMetadata()
         if (!song.albumName.isEmpty()) {
             HString album;
             album.Set(reinterpret_cast<const wchar_t *>(song.albumName.utf16()), UINT32(song.albumName.length()));
-            music->put_AlbumTitle(album.Get());
+            ComPtr<IMusicDisplayProperties2> music2;
+            if (SUCCEEDED(music.As(&music2)) && music2) {
+                music2->put_AlbumTitle(album.Get());
+            }
         }
     }
 

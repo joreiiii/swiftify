@@ -161,6 +161,17 @@ Item {
             visible: root.page === 2
 
             ContentSection {
+                title: "Autoplay"
+                symbol: "all_inclusive"
+
+                ConfigSwitch {
+                    text: "Play similar songs when your music ends"
+                    checked: Settings.autoplayEnabled
+                    onToggledTo: (checked) => Settings.autoplayEnabled = checked
+                }
+            }
+
+            ContentSection {
                 title: "Crossfade"
                 symbol: "play_circle"
 

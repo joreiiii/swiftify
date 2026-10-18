@@ -36,7 +36,7 @@ Column {
             visible: root.symbol.length > 0
             size: 34
             iconSize: 18
-            shape: root.iconShape
+            shape: Shapes.plain(root.iconShape)
             symbol: root.symbol
             hovered: headerHover.hovered
         }

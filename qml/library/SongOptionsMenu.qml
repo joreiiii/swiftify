@@ -69,6 +69,13 @@ StyledMenu {
     }
     StyledMenuSeparator {}
     StyledMenuItem {
+        visible: !root.local
+        height: visible ? implicitHeight : 0
+        text: "Go to Song Radio"
+        symbol: "radio"
+        onTriggered: Library.showRadio(root.song)
+    }
+    StyledMenuItem {
         text: "Play Next"
         symbol: "queue_play_next"
         onTriggered: Player.playNext(root.song)

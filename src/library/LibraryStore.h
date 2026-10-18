@@ -9,6 +9,7 @@
 
 #include <QHash>
 #include <QObject>
+#include <QPointer>
 #include <QSet>
 #include <QtQml/qqmlregistration.h>
 
@@ -109,6 +110,22 @@ class LibraryStore : public QObject {
     Q_PROPERTY(swiftify::SongListModel *recentlyPlayed READ recentlyPlayed CONSTANT FINAL)
     Q_PROPERTY(swiftify::ArtistListModel *recommendedArtists READ recommendedArtists CONSTANT FINAL)
     Q_PROPERTY(swiftify::AlbumListModel *recommendedAlbums READ recommendedAlbums CONSTANT FINAL)
+    /// the artists the person follows, listed with the playlists in the sidebar
+    Q_PROPERTY(swiftify::ArtistListModel *followedArtists READ followedArtists CONSTANT FINAL)
+    /// what's new: the followed artists' releases of the last four weeks, newest first
+    Q_PROPERTY(swiftify::AlbumListModel *newReleases READ newReleases CONSTANT FINAL)
+    Q_PROPERTY(bool loadingNewReleases READ isLoadingNewReleases NOTIFY loadingChanged FINAL)
+    /// why what's new could not be brought up to date (spotify's rate limit)
+    Q_PROPERTY(QString newReleasesMessage READ newReleasesMessage NOTIFY newReleasesMessageChanged FINAL)
+    /// what the people the person follows listen to: maps of name, imageUrl,
+    /// track, trackUri, artist and timestamp (unix milliseconds)
+    Q_PROPERTY(QVariantList friendActivity READ friendActivity NOTIFY friendActivityChanged FINAL)
+    Q_PROPERTY(bool loadingFriendActivity READ isLoadingFriendActivity NOTIFY loadingChanged FINAL)
+    /// why there is no friend activity, when spotify would not send it
+    Q_PROPERTY(QString friendActivityMessage READ friendActivityMessage NOTIFY friendActivityChanged FINAL)
+    /// a song radio (Page::Radio): the song it is made from, and its songs
+    Q_PROPERTY(swiftify::Song radioSeed READ radioSeed NOTIFY destinationChanged FINAL)
+    Q_PROPERTY(swiftify::SongListModel *radioSongs READ radioSongs CONSTANT FINAL)
     Q_PROPERTY(swiftify::SongListModel *albumSongs READ albumSongs CONSTANT FINAL)
     Q_PROPERTY(swiftify::SongListModel *artistTopSongs READ artistTopSongs CONSTANT FINAL)
     Q_PROPERTY(swiftify::AlbumListModel *artistAlbums READ artistAlbums CONSTANT FINAL)
@@ -139,7 +156,8 @@ class LibraryStore : public QObject {
 public:
     /// LocalFiles is the grid of playlists made on this computer, opening on
     /// LocalTracks, every music file of the person's own as a list
-    enum class Page { Home, Search, Songs, Playlists, PinnedPlaylists, Playlist, Album, Artist, LocalFiles, LocalTracks };
+    enum class Page { Home, Search, Songs, Playlists, PinnedPlaylists, Playlist, Album, Artist, LocalFiles, LocalTracks,
+                      Radio, Profile };
     Q_ENUM(Page)
     enum class SortOrder { Playlist, Title, Artist, Album, Duration };
     Q_ENUM(SortOrder)
@@ -184,6 +202,15 @@ public:
     SongListModel *recentlyPlayed() const { return m_recentlyPlayed; }
     ArtistListModel *recommendedArtists() const { return m_recommendedArtists; }
     AlbumListModel *recommendedAlbums() const { return m_recommendedAlbums; }
+    ArtistListModel *followedArtists() const { return m_followedArtists; }
+    Song radioSeed() const { return m_destination.radioSeed; }
+    AlbumListModel *newReleases() const { return m_newReleases; }
+    bool isLoadingNewReleases() const { return m_loadingNewReleases; }
+    QString newReleasesMessage() const { return m_newReleasesMessage; }
+    QVariantList friendActivity() const { return m_friendActivity; }
+    bool isLoadingFriendActivity() const { return m_loadingFriendActivity; }
+    QString friendActivityMessage() const { return m_friendActivityMessage; }
+    SongListModel *radioSongs() const { return m_radioSongs; }
     SongListModel *albumSongs() const { return m_albumSongs; }
     SongListModel *artistTopSongs() const { return m_artistTopSongs; }
     AlbumListModel *artistAlbums() const { return m_artistAlbums; }
@@ -219,6 +246,15 @@ public:
     Q_INVOKABLE void showSavedSongs();
     Q_INVOKABLE void showPlaylists();
     Q_INVOKABLE void showPinnedPlaylists();
+    /// a song's radio, as spotify's song radio page: the song, then songs like it
+    Q_INVOKABLE void showRadio(const swiftify::Song &seed);
+    /// the person's own profile: their playlists, who they follow, what they played
+    Q_INVOKABLE void showProfile();
+    /// plays a spotify track by its uri, looked up first: a friend's song
+    Q_INVOKABLE void playTrackUri(const QString &uri);
+    /// fetches what's new and friend activity afresh, for the top bar's popups
+    Q_INVOKABLE void loadNewReleases();
+    Q_INVOKABLE void loadFriendActivity();
     /// music files of the person's own (LocalLibrary): the playlists made of
     /// them, and a way to all of them
     Q_INVOKABLE void showLocalFiles();
@@ -272,6 +308,8 @@ signals:
     void savedChanged();
     void savedSongTotalChanged();
     void loadingChanged();
+    void friendActivityChanged();
+    void newReleasesMessageChanged();
     void playlistSaveFinished(bool ok);
     void playlistDeleted(const QString &id);
 
@@ -283,6 +321,8 @@ private:
         Artist artist;
         /// as opened, for a playlist from search that is not in the library
         Playlist playlist;
+        /// the song a radio is made from
+        Song radioSeed;
 
         bool operator==(const Destination &other) const;
     };
@@ -317,6 +357,12 @@ private:
     QCoro::Task<> loadHome();
     QCoro::Task<> loadSavedSongs();
     QCoro::Task<> loadSavedSongTotal();
+    /// the followed artists, alongside the playlists
+    QCoro::Task<> loadFollowedArtists();
+    QCoro::Task<> runNewReleases();
+    QCoro::Task<> runFriendActivity();
+    QCoro::Task<> runPlayTrackUri(QString uri);
+    QCoro::Task<> runRadioLoad(Song seed, CancelToken token);
     /// a save or removal before the list has loaded
     void adjustSavedSongTotal(int delta);
     QCoro::Task<> loadSavedStatuses(QList<Song> songs);
@@ -360,6 +406,15 @@ private:
     SongListModel *m_recentlyPlayed;
     ArtistListModel *m_recommendedArtists;
     AlbumListModel *m_recommendedAlbums;
+    ArtistListModel *m_followedArtists;
+    SongListModel *m_radioSongs;
+    QPointer<PlaybackController> m_player;
+    AlbumListModel *m_newReleases;
+    bool m_loadingNewReleases = false;
+    QString m_newReleasesMessage;
+    QVariantList m_friendActivity;
+    bool m_loadingFriendActivity = false;
+    QString m_friendActivityMessage;
     SongListModel *m_albumSongs;
     SongListModel *m_artistTopSongs;
     AlbumListModel *m_artistAlbums;

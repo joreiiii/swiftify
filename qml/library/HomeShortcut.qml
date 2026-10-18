@@ -26,7 +26,7 @@ T.AbstractButton {
     // hovered, its edge turns to running scallops
     background: WavyClip {
         radius: 16
-        wavy: root.hovered
+        wavy: false
         depth: 2.5
         wavelength: 18
 
@@ -50,7 +50,7 @@ T.AbstractButton {
             anchors.verticalCenter: parent.verticalCenter
             size: 44
             iconSize: 21
-            shape: root.iconShape
+            shape: Shapes.plain(root.iconShape)
             keepsShape: root.keepsShape
             symbol: root.symbol
             color: Appearance.colors.primaryContainer

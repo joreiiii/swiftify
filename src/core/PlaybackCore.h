@@ -36,14 +36,23 @@ public:
     virtual QCoro::Task<> playFile(QString path) = 0;
     virtual QCoro::Task<> restartAudioOutput() = 0;
     virtual QCoro::Task<QString> lyricsJson(QString spotifyUri) = 0;
+    /// what the people the person follows listen to (spotify's buddylist)
+    virtual QCoro::Task<QString> friendsJson() = 0;
     /// a playlist's songs read through the session, shaped like the web api's
     /// items page. the web api only gives the songs of the person's own and
     /// collaborative playlists
     virtual QCoro::Task<QString> playlistJson(QString playlistUri) = 0;
+    /// songs like a track from spotify's radio, shaped like playlistJson's
+    /// page: a song radio, or (autoplay) what plays on once the queue runs
+    /// out. `previous` are track uris to leave out
+    virtual QCoro::Task<QString> stationJson(QString seedUri, QStringList previous, bool autoplay) = 0;
 
     virtual void play() = 0;
     virtual void pause() = 0;
     virtual void seek(quint32 positionMs) = 0;
+    /// what plays, for spotify connect: the track's uri (empty while nothing
+    /// of spotify's plays), whether it plays, where in it, and how long
+    virtual void reportPlayback(const QString &spotifyUri, bool playing, quint32 positionMs, quint32 durationMs) = 0;
     virtual void setVolume(float volume) = 0;
     virtual float volume() const = 0;
     virtual void setStreamQuality(int kbps) = 0;

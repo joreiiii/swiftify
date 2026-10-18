@@ -9,6 +9,10 @@
 #include "spotify/SpotifySession.h"
 
 #include <QCollator>
+#include <QDate>
+#include <QDateTime>
+#include <QJsonObject>
+#include <QVariantMap>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QLoggingCategory>
@@ -21,6 +25,13 @@
 namespace swiftify {
 
 Q_LOGGING_CATEGORY(lcLibrary, "swiftify.library")
+
+namespace {
+/// what's new, as last found, and when (Settings)
+const QString kWhatsNewKey = QStringLiteral("whatsNew");
+const QString kWhatsNewFetchedKey = QStringLiteral("whatsNewFetchedAt");
+constexpr qint64 kWhatsNewRefreshSeconds = 12 * 60 * 60;
+} // namespace
 
 namespace {
 
@@ -89,6 +100,7 @@ bool LibraryStore::Destination::operator==(const Destination &other) const
     case Page::Playlist: return playlistId == other.playlistId;
     case Page::Album: return album.id == other.album.id;
     case Page::Artist: return artist.id == other.artist.id;
+    case Page::Radio: return radioSeed.uri == other.radioSeed.uri;
     default: return true;
     }
 }
@@ -106,6 +118,9 @@ LibraryStore::LibraryStore(SpotifySession *session, Settings *settings, ErrorCen
     , m_recentlyPlayed(new SongListModel(this))
     , m_recommendedArtists(new ArtistListModel(this))
     , m_recommendedAlbums(new AlbumListModel(this))
+    , m_followedArtists(new ArtistListModel(this))
+    , m_radioSongs(new SongListModel(this))
+    , m_newReleases(new AlbumListModel(this))
     , m_albumSongs(new SongListModel(this))
     , m_artistTopSongs(new SongListModel(this))
     , m_artistAlbums(new AlbumListModel(this))
@@ -160,7 +175,30 @@ LibraryStore *LibraryStore::create(QQmlEngine *, QJSEngine *)
 
 void LibraryStore::attachPlayer(PlaybackController *player)
 {
+    m_player = player;
     connect(player, &PlaybackController::playedFromSearch, this, &LibraryStore::recordSearchPlayback);
+}
+
+void LibraryStore::playTrackUri(const QString &uri)
+{
+    if (uri.startsWith(QLatin1StringView("spotify:track:"))) {
+        detach(runPlayTrackUri(uri));
+    }
+}
+
+QCoro::Task<> LibraryStore::runPlayTrackUri(QString uri)
+{
+    try {
+        const QString id = uri.section(u':', 2);
+        const Song song = co_await m_session->withLibraryAccessToken<Song>(
+            [this, id](QString accessToken) { return m_session->webApi().song(id, accessToken); });
+        if (m_player) {
+            m_player->playSong(song);
+        }
+    } catch (const Cancelled &) {
+    } catch (const SpotifyError &error) {
+        reportError(QStringLiteral("Playing the song"), error.message());
+    }
 }
 
 void LibraryStore::attachLocalFiles(LocalLibrary *localFiles)
@@ -435,6 +473,8 @@ void LibraryStore::goBack()
     case Page::Songs: showSavedSongs(); break;
     case Page::Playlists: showPlaylists(); break;
     case Page::PinnedPlaylists: showPinnedPlaylists(); break;
+    case Page::Radio: showRadio(destination.radioSeed); break;
+    case Page::Profile: showProfile(); break;
     case Page::LocalFiles: showLocalFiles(); break;
     case Page::LocalTracks: showLocalTracks(); break;
     case Page::Playlist: {
@@ -509,6 +549,232 @@ void LibraryStore::showPinnedPlaylists()
 {
     cancelDetailLoads();
     navigate({Page::PinnedPlaylists});
+}
+
+void LibraryStore::showProfile()
+{
+    cancelDetailLoads();
+    navigate({Page::Profile});
+    // its recently played shelf is home's
+    if (!m_hasLoadedHome) {
+        detach(loadHome());
+    }
+}
+
+void LibraryStore::showRadio(const Song &seed)
+{
+    if (seed.isLocalFile()) {
+        return;
+    }
+    cancelDetailLoads();
+    Destination destination {Page::Radio};
+    destination.radioSeed = seed;
+    navigate(destination);
+    m_radioSongs->setSongs({seed});
+    setLoading(m_loadingSongs, true);
+    detach(runRadioLoad(seed, m_songLoad.renew()));
+}
+
+QCoro::Task<> LibraryStore::runRadioLoad(Song seed, CancelToken token)
+{
+    Destination target {Page::Radio};
+    target.radioSeed = seed;
+    try {
+        co_await m_session->ensureFreshPlaybackConnection();
+        throwIfCancelled(token);
+        QList<Song> songs = songsFromItems(co_await m_session->core()->stationJson(seed.uri, {}, false));
+        throwIfCancelled(token);
+        if (!(m_destination == target)) {
+            co_return;
+        }
+        // like spotify's, the radio starts with the song it is made from
+        songs.prepend(seed);
+        m_radioSongs->setSongs(songs);
+        setLoading(m_loadingSongs, false);
+        m_songLoad.finish(token);
+        co_await loadSavedStatuses(songs);
+    } catch (const Cancelled &) {
+    } catch (const SpotifyError &error) {
+        if (m_destination == target && !isCancelled(token)) {
+            setLoading(m_loadingSongs, false);
+            reportError(QStringLiteral("Loading the song radio"), error.message());
+        }
+    }
+    m_songLoad.finish(token);
+}
+
+void LibraryStore::loadNewReleases()
+{
+    // what was found last time shows at once, even from an earlier run
+    if (m_newReleases->count() == 0) {
+        QList<Album> stored;
+        const QJsonArray cached = QJsonDocument::fromJson(m_settings->value(kWhatsNewKey).toByteArray()).array();
+        for (const QJsonValue &value : cached) {
+            const QJsonObject object = value.toObject();
+            Album album;
+            album.id = object.value(QStringLiteral("id")).toString();
+            album.name = object.value(QStringLiteral("name")).toString();
+            album.artists = object.value(QStringLiteral("artists")).toString();
+            album.artworkUrl = QUrl(object.value(QStringLiteral("artworkUrl")).toString());
+            album.releaseDate = object.value(QStringLiteral("releaseDate")).toString();
+            album.songCount = object.value(QStringLiteral("songCount")).toInt();
+            album.uri = object.value(QStringLiteral("uri")).toString();
+            stored.append(album);
+        }
+        m_newReleases->setItems(stored);
+    }
+    // one request per followed artist: asked at most twice a day, as
+    // spotify shuts a client out for a day once it asks too often
+    const QDateTime fetched = QDateTime::fromString(m_settings->value(kWhatsNewFetchedKey).toString(), Qt::ISODate);
+    if (fetched.isValid() && fetched.secsTo(QDateTime::currentDateTimeUtc()) < kWhatsNewRefreshSeconds) {
+        return;
+    }
+    if (!m_loadingNewReleases) {
+        detach(runNewReleases());
+    }
+}
+
+QCoro::Task<> LibraryStore::runNewReleases()
+{
+    if (!m_session->hasLibraryToken()) {
+        co_return;
+    }
+    setLoading(m_loadingNewReleases, true);
+    const quint64 generation = m_session->generation();
+    // what spotify's bell shows: the last four weeks of the followed artists
+    const QString since = QDate::currentDate().addDays(-28).toString(Qt::ISODate);
+    QList<Album> fresh;
+    QSet<QString> seen;
+    QString message;
+    const QList<Artist> artists = m_followedArtists->items();
+    // a few at once, so as not to burst past spotify's rate limit
+    constexpr qsizetype kAtOnce = 4;
+    for (qsizetype start = 0; start < artists.size() && message.isEmpty(); start += kAtOnce) {
+        std::vector<QCoro::Task<QList<Album>>> batch;
+        for (qsizetype index = start; index < std::min(artists.size(), start + kAtOnce); ++index) {
+            batch.push_back(m_session->withLibraryAccessToken<QList<Album>>(
+                [this, artist = artists.at(index)](QString accessToken) {
+                    return m_session->webApi().latestReleases(artist, accessToken);
+                }));
+        }
+        // each started is awaited to its end, even after one fails
+        for (auto &task : batch) {
+            try {
+                for (const Album &album : co_await std::move(task)) {
+                    // a release date of only a year or month reads as before `since`
+                    if (album.releaseDate.size() == 10 && album.releaseDate >= since && !seen.contains(album.id)) {
+                        seen.insert(album.id);
+                        fresh.append(album);
+                    }
+                }
+            } catch (const Cancelled &) {
+            } catch (const SpotifyError &error) {
+                qCWarning(lcLibrary).noquote() << "what's new:" << error.message();
+                // spotify wants a pause: the rest are not asked for
+                if (error.kind() == SpotifyError::Kind::RateLimited) {
+                    message = QStringLiteral("Spotify asked Swiftify to slow down. What's New will update later.");
+                    // nothing is asked again before spotify's wait is over
+                    const qint64 wait = std::max<qint64>(error.retryAfterSeconds(), 60);
+                    m_settings->setValue(kWhatsNewFetchedKey, QDateTime::currentDateTimeUtc()
+                        .addSecs(wait - kWhatsNewRefreshSeconds).toString(Qt::ISODate));
+                }
+            }
+        }
+        if (generation != m_session->generation()) {
+            setLoading(m_loadingNewReleases, false);
+            co_return;
+        }
+    }
+    if (message.isEmpty()) {
+        std::stable_sort(fresh.begin(), fresh.end(),
+                         [](const Album &a, const Album &b) { return a.releaseDate > b.releaseDate; });
+        m_newReleases->setItems(fresh);
+        QJsonArray cached;
+        for (const Album &album : fresh) {
+            cached.append(QJsonObject {
+                {QStringLiteral("id"), album.id},
+                {QStringLiteral("name"), album.name},
+                {QStringLiteral("artists"), album.artists},
+                {QStringLiteral("artworkUrl"), album.artworkUrl.toString()},
+                {QStringLiteral("releaseDate"), album.releaseDate},
+                {QStringLiteral("songCount"), album.songCount},
+                {QStringLiteral("uri"), album.uri},
+            });
+        }
+        m_settings->setValue(kWhatsNewKey, QJsonDocument(cached).toJson(QJsonDocument::Compact));
+        m_settings->setValue(kWhatsNewFetchedKey, QDateTime::currentDateTimeUtc().toString(Qt::ISODate));
+    }
+    if (m_newReleasesMessage != message) {
+        m_newReleasesMessage = message;
+        emit newReleasesMessageChanged();
+    }
+    setLoading(m_loadingNewReleases, false);
+}
+
+void LibraryStore::loadFriendActivity()
+{
+    if (!m_loadingFriendActivity) {
+        detach(runFriendActivity());
+    }
+}
+
+QCoro::Task<> LibraryStore::runFriendActivity()
+{
+    setLoading(m_loadingFriendActivity, true);
+    const quint64 generation = m_session->generation();
+    QVariantList friends;
+    QString message;
+    try {
+        co_await m_session->ensureFreshPlaybackConnection();
+        const QJsonObject list = QJsonDocument::fromJson((co_await m_session->core()->friendsJson()).toUtf8()).object();
+        for (const QJsonValue &value : list.value(QStringLiteral("friends")).toArray()) {
+            const QJsonObject entry = value.toObject();
+            const QJsonObject user = entry.value(QStringLiteral("user")).toObject();
+            const QJsonObject track = entry.value(QStringLiteral("track")).toObject();
+            friends.append(QVariantMap {
+                {QStringLiteral("name"), user.value(QStringLiteral("name")).toString()},
+                {QStringLiteral("imageUrl"), user.value(QStringLiteral("imageUrl")).toString()},
+                {QStringLiteral("track"), track.value(QStringLiteral("name")).toString()},
+                {QStringLiteral("trackUri"), track.value(QStringLiteral("uri")).toString()},
+                {QStringLiteral("artist"), track.value(QStringLiteral("artist")).toObject().value(QStringLiteral("name")).toString()},
+                {QStringLiteral("timestamp"), entry.value(QStringLiteral("timestamp")).toDouble()},
+            });
+        }
+        // the most recent first, as spotify lists them
+        std::stable_sort(friends.begin(), friends.end(), [](const QVariant &a, const QVariant &b) {
+            return a.toMap().value(QStringLiteral("timestamp")).toDouble() > b.toMap().value(QStringLiteral("timestamp")).toDouble();
+        });
+    } catch (const Cancelled &) {
+        co_return;
+    } catch (const SpotifyError &error) {
+        message = QStringLiteral("Spotify won't share friend activity with this app right now.");
+        qCWarning(lcLibrary) << "friend activity:" << error.message();
+    }
+    if (generation != m_session->generation()) {
+        co_return;
+    }
+    m_friendActivity = friends;
+    m_friendActivityMessage = message;
+    emit friendActivityChanged();
+    setLoading(m_loadingFriendActivity, false);
+}
+
+QCoro::Task<> LibraryStore::loadFollowedArtists()
+{
+    if (!m_session->hasLibraryToken() || m_session->libraryNeedsAuthorizationUpgrade()) {
+        co_return;
+    }
+    const quint64 generation = m_session->generation();
+    try {
+        const QList<Artist> artists = co_await m_session->withLibraryAccessToken<QList<Artist>>(
+            [this](QString accessToken) { return m_session->webApi().followedArtists(accessToken); });
+        if (generation == m_session->generation()) {
+            m_followedArtists->setItems(artists);
+        }
+    } catch (const Cancelled &) {
+    } catch (const SpotifyError &error) {
+        reportError(QStringLiteral("Loading followed artists"), error.message());
+    }
 }
 
 void LibraryStore::showLocalFiles()
@@ -1001,6 +1267,7 @@ QCoro::Task<> LibraryStore::loadPlaylists()
             [this](QString accessToken) { return m_session->webApi().playlists(accessToken); });
         setPlaylistList(playlists);
         m_session->setLibraryStatus(QStringLiteral("Connected"));
+        detach(loadFollowedArtists());
     } catch (const Cancelled &) {
     } catch (const SpotifyError &error) {
         reportError(QStringLiteral("Loading playlists"), error.message());
@@ -1563,6 +1830,12 @@ void LibraryStore::reset()
     m_recentlyPlayed->clear();
     m_recommendedAlbums->setItems({});
     m_recommendedArtists->setItems({});
+    m_followedArtists->setItems({});
+    m_radioSongs->clear();
+    m_newReleases->setItems({});
+    m_friendActivity.clear();
+    m_friendActivityMessage.clear();
+    emit friendActivityChanged();
     m_albumSongs->clear();
     m_artistAlbums->setItems({});
     m_artistTopSongs->clear();

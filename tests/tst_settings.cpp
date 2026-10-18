@@ -10,11 +10,13 @@ class SettingsTest : public QObject {
     Q_OBJECT
 
 private slots:
-    void defaultsMatchTheMacApp()
+    void defaultsMatchSpotifyAccurate()
     {
         QTemporaryDir directory;
         Settings settings(directory.filePath(QStringLiteral("swiftify.conf")));
-        QCOMPARE(settings.visualizersEnabled(), true);
+        QCOMPARE(settings.visualizersEnabled(), false);
+        QCOMPARE(settings.reduceMotion(), true);
+        QCOMPARE(settings.noShapes(), true);
         QCOMPARE(settings.circularVisualizer(), false);
         QCOMPARE(settings.visualizerShape(), QStringLiteral("bars"));
         QCOMPARE(settings.visualizerSensitivity(), 1.0);
@@ -27,7 +29,7 @@ private slots:
         QCOMPARE(settings.sleepTimerFade(), QStringLiteral("finalSeconds"));
         QCOMPARE(settings.themeSource(), QStringLiteral("spotify"));
         QCOMPARE(settings.themeMode(), QStringLiteral("system"));
-        QCOMPARE(settings.windowControlsOnRight(), false);
+        QCOMPARE(settings.windowControlsOnRight(), true);
 #ifdef Q_OS_WIN
         QVERIFY(!settings.nativeTitleBar());
 #else
@@ -121,7 +123,8 @@ private slots:
         QCOMPARE(reopened.songCacheMegabytes(), 2000);
         QVERIFY(reopened.performanceMode());
         QVERIFY(reopened.noShapes());
-        QVERIFY(!reopened.reduceMotion());
+        // left as it was: on, by default
+        QVERIFY(reopened.reduceMotion());
     }
 
     void windowControlsOnRightPersists()
@@ -131,13 +134,14 @@ private slots:
         {
             Settings settings(path);
             QSignalSpy spy(&settings, &Settings::windowControlsOnRightChanged);
-            settings.setWindowControlsOnRight(true);
-            settings.setWindowControlsOnRight(true);
+            // on by default: turning them to the left is what is kept
+            settings.setWindowControlsOnRight(false);
+            settings.setWindowControlsOnRight(false);
             QCOMPARE(spy.count(), 1);
-            QVERIFY(settings.windowControlsOnRight());
+            QVERIFY(!settings.windowControlsOnRight());
         }
         Settings reopened(path);
-        QVERIFY(reopened.windowControlsOnRight());
+        QVERIFY(!reopened.windowControlsOnRight());
     }
 };
 

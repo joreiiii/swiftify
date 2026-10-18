@@ -21,7 +21,7 @@ IconButton {
     property int effect: ToolbarButton.Pop
     /// the shape it sits on, and how it sits: a cookie that turns while
     /// hovered, unless told otherwise
-    property string shape: "cookie9"
+    property string shape: "circle"
     property real shapeAngle: 0
     property bool turnsOnHover: true
     property color shapeColor: scheme.surfaceContainerHigh
@@ -77,7 +77,7 @@ IconButton {
         width: root.width
         height: root.height
         z: -0.5
-        shape: root.shape
+        shape: Shapes.plain(root.shape)
         spinAngle: root.shapeAngle + drift.value
         color: root.down ? root.shapePressedColor : (root.hovered && root.enabled ? root.shapeHoverColor : root.shapeColor)
         opacity: root.enabled ? 1 : 0.38

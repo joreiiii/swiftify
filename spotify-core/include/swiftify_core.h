@@ -67,6 +67,16 @@ void swiftify_core_lyrics_json(const SwiftifyCore *core, uint64_t request_id,
  * /v1/playlists/{id}/items page. */
 void swiftify_core_playlist_json(const SwiftifyCore *core, uint64_t request_id,
                                  const char *playlist_uri);
+/* songs like a track from spotify's radio, shaped like the playlist page:
+ * a song radio, or (autoplay) what plays on once the queue runs out.
+ * `previous` is a comma-separated list of track uris to leave out. */
+/* what the people the person follows are listening to: spotify's
+ * buddylist, as json */
+void swiftify_core_friends_json(const SwiftifyCore *core, uint64_t request_id);
+void swiftify_core_radio_json(const SwiftifyCore *core, uint64_t request_id,
+                              const char *seed_uri, const char *previous);
+void swiftify_core_autoplay_json(const SwiftifyCore *core, uint64_t request_id,
+                                 const char *seed_uri, const char *previous);
 /* plays a music file of the person's own from anywhere on disk: mp3, flac,
  * ogg vorbis, wav, aiff, or aac or apple lossless in an m4a. */
 void swiftify_core_play_file(const SwiftifyCore *core, uint64_t request_id, const char *path);
@@ -88,6 +98,12 @@ char *swiftify_write_local_tags(const char *path, const char *edits, const uint8
                                 size_t artwork_len);
 
 void swiftify_core_disconnect(const SwiftifyCore *core);
+
+/* what plays, for spotify connect: swiftify shows as a device of the
+ * person's and spotify (and so discord's spotify status) has the song.
+ * spotify_uri is a track's, or empty while nothing of spotify's plays. */
+void swiftify_core_report_playback(const SwiftifyCore *core, const char *spotify_uri, bool playing,
+                                   uint32_t position_ms, uint32_t duration_ms);
 
 char *swiftify_core_play(const SwiftifyCore *core);
 char *swiftify_core_pause(const SwiftifyCore *core);

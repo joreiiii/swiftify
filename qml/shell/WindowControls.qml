@@ -19,7 +19,7 @@ Row {
         scheme: root.scheme
         size: root.compact ? 28 : 36
         iconSize: root.compact ? 15 : 18
-        shape: "cookie9"
+        shape: "circle"
         shapeHoverColor: root.scheme.errorContainer
         shapePressedColor: root.scheme.errorContainerActive
         symbol: "close"
@@ -31,20 +31,20 @@ Row {
         scheme: root.scheme
         size: root.compact ? 28 : 36
         iconSize: root.compact ? 14 : 16
-        shape: "cookie6"
+        shape: "circle"
         symbol: root.window.visibility === Window.Maximized ? "close_fullscreen" : "open_in_full"
         tooltip: root.window.visibility === Window.Maximized ? "Restore" : "Maximize"
-        onClicked: root.window.visibility === Window.Maximized ? root.window.showNormal() : root.window.showMaximized()
+        onClicked: App.toggleMaximized(root.window)
     }
     ToolbarButton {
         objectName: "minimizeWindowButton"
         scheme: root.scheme
         size: root.compact ? 28 : 36
         iconSize: root.compact ? 15 : 18
-        shape: "pill"
+        shape: "circle"
         turnsOnHover: false
         symbol: "remove"
         tooltip: "Minimize"
-        onClicked: root.window.showMinimized()
+        onClicked: App.minimizeWindow(root.window)
     }
 }

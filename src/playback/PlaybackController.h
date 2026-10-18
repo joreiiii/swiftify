@@ -217,6 +217,13 @@ private:
     QCoro::Task<> runResume(CancelToken token);
     QCoro::Task<> restartAudioOutput(CancelToken token);
     QCoro::Task<> runLoadLyrics(Song song, CancelToken token);
+    QCoro::Task<> runTopUpAutoplay(Song seed, QStringList previous, CancelToken token);
+    /// asks for songs to play on once the queue's last song is playing, so
+    /// they are there (and preloaded) before it ends
+    void topUpAutoplay();
+    /// what plays on after the queue: autoplay's songs, which are on their way
+    /// if none are there yet
+    bool continueWithAutoplay();
     void cancelPlaybackRequest();
     void silenceWithdrawnPlayback();
     void handleEndOfTrack();
@@ -242,6 +249,8 @@ private:
     void setLivePosition(quint32 positionMs);
     void setDuration(quint32 durationMs);
     void setStatus(const QString &status);
+    /// tells spotify connect what plays (PlaybackCore::reportPlayback)
+    void reportToConnect();
     void reportError(const QString &context, const QString &message);
 
     PlaybackCore *m_core;
@@ -281,6 +290,12 @@ private:
     LyricsModel *m_lyricsModel;
     std::optional<Lyrics> m_lyrics;
     TaskSlot m_lyricsRequest;
+    TaskSlot m_autoplayRequest;
+    /// the song autoplay last asked spotify about, so it asks once per song
+    quint64 m_autoplaySeedInstance = 0;
+    /// the queue ran out while autoplay's songs were on their way: play the
+    /// first of them when they come
+    bool m_autoplayResumes = false;
     bool m_loadingLyrics = false;
     QString m_lyricsMessage;
     int m_activeLyricIndex = -1;

@@ -27,6 +27,15 @@ ApplicationWindow {
     minimumHeight: Math.ceil(410 * zoom)
     readonly property bool rightPanelFits: layoutWidth - effectiveSidebarWidth - Appearance.sizes.sideSheetWidth - 32 >= 404
 
+    /// find: in the playlist open, or spotify's search in the sidebar
+    function focusSearch() {
+        if (Library.page === Library.Page.Playlist && Library.selectedPlaylist.valid) {
+            topBar.focusSearch()
+        } else {
+            sidebar.focusSearch()
+        }
+    }
+
     function closeCrowdedPanels() {
         if (!rightPanelFits) {
             Player.showingLyrics = false
@@ -59,6 +68,9 @@ ApplicationWindow {
     Component.onCompleted: {
         if (App.windows) App.setNativeTitleBar(window, Settings.nativeTitleBar)
         findZoomedItems()
+        // the window opens with nothing focused: not the sidebar's search
+        // field, which would take every key typed to the window
+        Qt.callLater(() => window.contentItem.forceActiveFocus())
     }
 
     Connections {
@@ -231,29 +243,28 @@ ApplicationWindow {
         // nothing under the opaque immersive player is drawn, or animates
         visible: window.onScreen && !Session.evaluatingStoredLogin && window.immersiveReveal < 1
 
-        // the top edge moves the window, as a title bar would: the gutter
-        // above the page and, on macos, the traffic lights' strip. it sits
-        // under everything else, so it only gets what nothing above takes.
-        Item {
-            width: parent.width
-            height: Math.max(window.titleBarInset, window.inAppWindowControls ? 36 : 0) + 8
-
-            DragHandler {
-                target: null
-                onActiveChanged: if (active) window.startSystemMove()
-            }
-            TapHandler {
-                onDoubleTapped: window.visibility === Window.Maximized ? window.showNormal() : window.showMaximized()
-            }
+        // the bar across the window's top, as spotify's: it is the title
+        // bar too, and holds the window's buttons. on macos it leaves the
+        // traffic lights their corner
+        GlobalTopBar {
+            id: globalBar
+            objectName: "globalTopBar"
+            anchors.left: parent.left
+            anchors.leftMargin: App.macOS ? 72 : 0
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.topMargin: App.macOS ? window.titleBarInset - 28 : 0
+            height: 56
+            window: window
+            showWindowControls: window.inAppWindowControls
         }
 
         Sidebar {
             id: sidebar
             objectName: "mainSidebar"
             anchors.left: parent.left
-            anchors.top: parent.top
+            anchors.top: globalBar.bottom
             anchors.bottom: parent.bottom
-            anchors.topMargin: 8 + window.titleBarInset
             anchors.leftMargin: 8
             width: window.effectiveSidebarWidth
         }
@@ -283,8 +294,7 @@ ApplicationWindow {
             anchors.leftMargin: 8
             anchors.right: inspector.left
             anchors.rightMargin: 8
-            anchors.top: parent.top
-            anchors.topMargin: 8
+            anchors.top: globalBar.bottom
             anchors.bottom: parent.bottom
             anchors.bottomMargin: 8
             radius: Appearance.rounding.large
@@ -323,10 +333,7 @@ ApplicationWindow {
                 anchors.left: parent.left
                 anchors.right: parent.right
                 anchors.top: parent.top
-                window: window
                 backdropSource: pageContent
-                windowControlsOnRight: window.inAppWindowControls && Settings.windowControlsOnRight
-                inspectorShown: inspector.shown
             }
 
             Snackbar {
@@ -357,8 +364,7 @@ ApplicationWindow {
                                           && !UiState.needsSetup && window.rightPanelFits
             anchors.right: parent.right
             anchors.rightMargin: shown ? 8 : 0
-            anchors.top: parent.top
-            anchors.topMargin: 8 + (window.inAppWindowControls && Settings.windowControlsOnRight ? 36 : 0)
+            anchors.top: globalBar.bottom
             anchors.bottom: parent.bottom
             anchors.bottomMargin: 8
             width: shown ? Appearance.sizes.sideSheetWidth : 0
@@ -437,7 +443,7 @@ ApplicationWindow {
                         anchors.horizontalCenter: parent.horizontalCenter
                         size: 72
                         iconSize: 36
-                        shape: "clamShell"
+                        shape: "squircle"
                         symbol: "folder_open"
                         color: Appearance.colors.primary
                         iconColor: Appearance.colors.onPrimary
@@ -674,9 +680,11 @@ ApplicationWindow {
     WindowControls {
         id: appWindowControls
         objectName: "appWindowControls"
+        // the top bar holds them otherwise; over the immersive player, which
+        // covers it, they show here
         x: Settings.windowControlsOnRight ? parent.width - width - 12 : 12
         y: 8
-        visible: window.inAppWindowControls
+        visible: window.inAppWindowControls && window.immersiveReveal > 0
         compact: true
         scheme: window.immersiveReveal > 0 ? PlayerStyle.darkScheme : Appearance.colors
         window: window
@@ -862,7 +870,7 @@ ApplicationWindow {
         onActivated: Library.goBack()
     }
 
-    Shortcut { sequences: [StandardKey.Find]; enabled: !App.macOS; onActivated: topBar.focusSearch() }
+    Shortcut { sequences: [StandardKey.Find]; enabled: !App.macOS; onActivated: window.focusSearch() }
 
     // spelled out rather than StandardKey.ZoomIn, which holds ctrl + too: the
     // same key twice in one shortcut is ambiguous, and neither acts
@@ -874,7 +882,7 @@ ApplicationWindow {
         active: App.nativeMenuBar
         sourceComponent: MacMenuBar {
             window: window
-            onFindRequested: topBar.focusSearch()
+            onFindRequested: window.focusSearch()
             // the settings first, if they are open over the window
             onCloseWindowRequested: {
                 const open = settings.item as SettingsDialog
@@ -884,8 +892,8 @@ ApplicationWindow {
                     window.close()
                 }
             }
-            onMinimizeRequested: window.showMinimized()
-            onZoomRequested: window.visibility === Window.Maximized ? window.showNormal() : window.showMaximized()
+            onMinimizeRequested: App.minimizeWindow(window)
+            onZoomRequested: App.toggleMaximized(window)
             onShowWindowRequested: window.reveal()
         }
     }

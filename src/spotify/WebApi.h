@@ -30,12 +30,16 @@ public:
     /// how many songs are saved, from one page of one: the count without the list
     QCoro::Task<int> savedSongTotal(QString accessToken);
     QCoro::Task<QList<Song>> recentlyPlayed(QString accessToken);
+    /// the artists the person follows (needs user-follow-read)
+    QCoro::Task<QList<Artist>> followedArtists(QString accessToken);
     QCoro::Task<SearchResults> search(QString query, QString accessToken);
     QCoro::Task<Song> song(QString trackId, QString accessToken);
     /// market left out, so spotify uses the account's country
     QCoro::Task<QList<Song>> artistTopTracks(Artist artist, QString accessToken);
     QCoro::Task<QList<Song>> albumSongs(Album album, QString accessToken);
     QCoro::Task<QList<Album>> artistAlbums(Artist artist, QString accessToken);
+    /// an artist's few newest albums and singles, one page
+    QCoro::Task<QList<Album>> latestReleases(Artist artist, QString accessToken);
 
     QCoro::Task<Playlist> createPlaylist(QString name, QString description, bool isPublic, QString accessToken);
     QCoro::Task<> updatePlaylist(QString id, QString name, QString description, bool isPublic, QString accessToken);

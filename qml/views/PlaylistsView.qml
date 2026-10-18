@@ -28,13 +28,13 @@ GridView {
     leftMargin: margin - 10
     rightMargin: margin - 10
     // under the top bar, which floats over the page, and a little more
-    topMargin: Appearance.sizes.topBarHeight + 24
+    topMargin: Appearance.sizes.pageTop + 24
     bottomMargin: Appearance.sizes.playerBarClearance
     cellWidth: available / columns
     cellHeight: tile + 86
     boundsBehavior: Flickable.StopAtBounds
     reuseItems: true
-    ScrollBar.vertical: StyledScrollBar { topPadding: 3 + Appearance.sizes.topBarHeight }
+    ScrollBar.vertical: StyledScrollBar { topPadding: 3 + Appearance.sizes.pageTop }
 
     // the new-playlist tile comes first on the full grid
     model: source.count + leading

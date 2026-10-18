@@ -8,9 +8,11 @@ import Swiftify
 ListView {
     id: root
 
-    // pages run up under the top bar, which floats over them with no
-    // background of its own; they start below it
-    topMargin: Appearance.sizes.topBarHeight
+    /// the gap above the page. the playlist page's toolbar floats over it
+    /// with no background of its own, so that page starts below it
+    property real topInset: Appearance.sizes.pageTop
+
+    topMargin: topInset
 
     property SongListModel songs
     property Component hero
@@ -30,7 +32,7 @@ ListView {
     reuseItems: true
     cacheBuffer: 600
     bottomMargin: Appearance.sizes.playerBarClearance
-    ScrollBar.vertical: StyledScrollBar { topPadding: 3 + Appearance.sizes.topBarHeight }
+    ScrollBar.vertical: StyledScrollBar { topPadding: 3 + root.topInset }
 
     header: Column {
         width: root.width

@@ -40,6 +40,7 @@
 #include <QIcon>
 #include <QPlatformSurfaceEvent>
 #include <QSet>
+#include <QStyleHints>
 #include <QWindow>
 #include <QNetworkAccessManager>
 #include <QQmlApplicationEngine>
@@ -248,6 +249,10 @@ int main(int argc, char *argv[])
     // x11 shows this; wayland goes by the desktop entry, macos by the bundle
     QGuiApplication::setWindowIcon(QIcon(QStringLiteral(":/qt/qml/Swiftify/resources/swiftify-icon.png")));
 #endif
+
+    // a notch of the wheel scrolls further than qt's three lines, closer to
+    // spotify's own app
+    QGuiApplication::styleHints()->setWheelScrollLines(6);
 
     SingleInstance instance;
     if (instance.forwardToRunningInstance(QCoreApplication::arguments())) {

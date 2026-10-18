@@ -286,6 +286,10 @@ if(WIN32)
 endif()
 
 qt_add_executable(swiftify src/main.cpp)
+if(WIN32)
+    # the executable's own icon, for explorer, the taskbar and alt-tab
+    target_sources(swiftify PRIVATE packaging/windows/swiftify.rc)
+endif()
 target_link_libraries(swiftify PRIVATE swiftify_app swiftify_appplugin)
 if(SWIFTIFY_IS_LINUX)
     target_link_libraries(swiftify PRIVATE Qt6::Widgets)

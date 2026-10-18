@@ -29,6 +29,23 @@ QtObject {
         return count + (count === 1 ? " song" : " songs")
     }
 
+    /// how long ago a unix time in milliseconds was, as spotify's friend
+    /// activity says it: "now", "5 m", "3 hr", "2 d"
+    function timeAgo(milliseconds: real): string {
+        if (!(milliseconds > 0)) {
+            return ""
+        }
+        const minutes = Math.floor((Date.now() - milliseconds) / 60000)
+        if (minutes < 2) {
+            return "now"
+        }
+        if (minutes < 60) {
+            return minutes + " m"
+        }
+        const hours = Math.floor(minutes / 60)
+        return hours < 24 ? hours + " hr" : Math.floor(hours / 24) + " d"
+    }
+
     function joined(parts: list<string>, separator: string): string {
         let result = ""
         for (let index = 0; index < parts.length; ++index) {

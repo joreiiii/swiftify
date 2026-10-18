@@ -22,6 +22,8 @@ public:
 
     static void initializeProcess();
     static void setNativeTitleBar(QWindow *window, bool enabled);
+    static void toggleMaximized(QWindow *window);
+    static void minimize(QWindow *window);
     void setWindow(QWindow *window);
     bool nativeEventFilter(const QByteArray &eventType, void *message, qintptr *result) override;
     bool eventFilter(QObject *watched, QEvent *event) override;
@@ -33,6 +35,11 @@ private:
 
     void attachWindow();
     void styleWindow();
+    /// whether the window's own title bar is at `point` (in the window's
+    /// logical pixels): an item named "windowCaption" with nothing that
+    /// takes the pointer above it. there windows moves, snaps and maximizes
+    /// the window itself, as it does by a native title bar
+    bool isCaptionAt(const QPointF &point) const;
     void initializeTaskbar();
     void updateButtons();
     void updateProgress();

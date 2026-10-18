@@ -29,7 +29,8 @@ public:
     /// librespot's keymaster client, spotify's own desktop app
     static constexpr auto kPlaybackClientId = "65b708073fc0480ea92a077233ca87bd";
     static constexpr int kPlaybackAuthorizationVersion = 2;
-    static constexpr int kLibraryAuthorizationVersion = 2;
+    /// 3: user-follow-read, for the followed artists in the sidebar
+    static constexpr int kLibraryAuthorizationVersion = 3;
     static constexpr quint16 kRedirectPort = 8898;
     static QUrl redirectUri();
     /// where tokens are issued; tests point it at a fake

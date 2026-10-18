@@ -51,8 +51,9 @@ Item {
     property real waviness: 0
     property real wavelength: 22
     readonly property real wavePhase: waveDrift.value
-    /// a round cover's edge is a squiggle: a wavy line the cover is cut along
-    property bool squiggly: true
+    /// whether a round cover's edge is a squiggle, a wavy line the cover is cut
+    /// along, rather than a plain circle
+    property bool squiggly: false
     /// with no shapes (Settings.noShapes) a round cover's edge is a plain
     /// circle, and no edge waves
     readonly property bool showsSquiggle: circular && squiggly && !Settings.noShapes && Math.min(width, height) >= 40

@@ -7,9 +7,8 @@ import Swiftify
 Flickable {
     id: root
 
-    // pages run up under the top bar, which floats over them with no
-    // background of its own; they start below it
-    topMargin: Appearance.sizes.topBarHeight
+    // no toolbar floats over this page: only a small gap above it
+    topMargin: Appearance.sizes.pageTop
 
     /// the artist it opened on. a page kept behind a newer one (PageHost)
     /// holds on to its own rather than following the library elsewhere
@@ -33,7 +32,7 @@ Flickable {
     contentHeight: column.implicitHeight + Appearance.sizes.playerBarClearance
     boundsBehavior: Flickable.StopAtBounds
     ScrollBar.vertical: StyledScrollBar {
-        topPadding: 3 + Appearance.sizes.topBarHeight
+        topPadding: 3 + Appearance.sizes.pageTop
     }
 
     Column {
@@ -53,7 +52,6 @@ Flickable {
                     iconOnly: parent ? parent.compactActions : false
                     compactSize: parent ? parent.actionSize : 48
                     implicitHeight: iconOnly ? compactSize : 48
-                    wavy: true
                     symbol: "play_arrow"
                     burst: "play"
                     text: "Play"

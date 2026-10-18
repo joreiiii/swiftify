@@ -42,6 +42,69 @@ pub async fn playlist_json(session: &Session, playlist_uri: &str) -> Result<Stri
         .map_err(|error| format!("failed to encode the playlist: {error}"))
 }
 
+/// songs like `seed_uri` (a track), from spotify's radio: the song radio a
+/// person starts, and what plays on once the queue runs out. `previous` are
+/// tracks to leave out, the ones that just played. shaped like
+/// `playlist_json`'s page.
+pub async fn station_json(
+    session: &Session,
+    seed_uri: &str,
+    previous: &[String],
+    autoplay: bool,
+) -> Result<String, String> {
+    match SpotifyUri::from_uri(seed_uri) {
+        Ok(SpotifyUri::Track { .. }) => {}
+        _ => return Err(format!("not a spotify track: {seed_uri}")),
+    }
+    let previous_ids: Vec<SpotifyId> = previous
+        .iter()
+        .filter_map(|uri| match SpotifyUri::from_uri(uri) {
+            Ok(uri @ SpotifyUri::Track { .. }) => SpotifyId::try_from(&uri).ok(),
+            _ => None,
+        })
+        .collect();
+    let bytes = session
+        .spclient()
+        .get_apollo_station("tracks", seed_uri, Some(50), previous_ids, autoplay)
+        .await
+        .map_err(|error| format!("Spotify would not send the radio: {error}"))?;
+    let station: serde_json::Value = serde_json::from_slice(&bytes)
+        .map_err(|error| format!("the radio could not be read: {error}"))?;
+
+    let mut uris = station_track_uris(&station);
+    uris.retain(|uri| uri != seed_uri && !previous.contains(uri));
+    let tracks = track_metadata(session, &uris).await?;
+    let items = uris
+        .iter()
+        .filter_map(|uri| tracks.get(uri))
+        .map(|track| ItemPayload { item: track.clone() })
+        .collect();
+    serde_json::to_string(&PagePayload { items })
+        .map_err(|error| format!("failed to encode the radio: {error}"))
+}
+
+/// the track uris a station lists, in order and once each
+fn station_track_uris(station: &serde_json::Value) -> Vec<String> {
+    let mut uris: Vec<String> = Vec::new();
+    let tracks = station
+        .get("tracks")
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten();
+    for track in tracks {
+        let uri = track
+            .get("uri")
+            .or_else(|| track.get("original_gid"))
+            .and_then(serde_json::Value::as_str);
+        if let Some(uri) = uri.filter(|uri| uri.starts_with("spotify:track:")) {
+            if !uris.iter().any(|known| known == uri) {
+                uris.push(uri.to_owned());
+            }
+        }
+    }
+    uris
+}
+
 /// every item's uri, in the playlist's order
 async fn item_uris(session: &Session, id: &SpotifyId) -> Result<Vec<String>, String> {
     let base62 = id
@@ -245,6 +308,25 @@ impl ImagePayload {
             width: image.width.unwrap_or(side),
             height: image.height.unwrap_or(side),
         })
+    }
+}
+
+#[cfg(test)]
+mod station_tests {
+    use super::station_track_uris;
+
+    #[test]
+    fn reads_a_stations_tracks_in_order_once_each() {
+        let station = serde_json::json!({
+            "tracks": [
+                {"uri": "spotify:track:a"},
+                {"original_gid": "spotify:track:b"},
+                {"uri": "spotify:episode:c"},
+                {"uri": "spotify:track:a"},
+            ]
+        });
+        assert_eq!(station_track_uris(&station), ["spotify:track:a", "spotify:track:b"]);
+        assert!(station_track_uris(&serde_json::json!({})).is_empty());
     }
 }
 

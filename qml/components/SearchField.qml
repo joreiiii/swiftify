@@ -10,6 +10,8 @@ Rectangle {
     property alias text: input.text
     readonly property bool editing: input.activeFocus
     property string placeholder: "Search"
+    /// room kept at the right end for a button of the field's owner
+    property real trailingInset: 0
     signal accepted()
 
     function focusField() {
@@ -46,7 +48,7 @@ Rectangle {
     TextInput {
         id: input
         x: icon.x + icon.width + 10
-        width: Math.max(0, (clear.visible ? clear.x : root.width) - 12 - x)
+        width: Math.max(0, (clear.visible ? clear.x : root.width - root.trailingInset) - 12 - x)
         anchors.verticalCenter: parent.verticalCenter
         clip: true
         selectByMouse: true
@@ -81,7 +83,7 @@ Rectangle {
     IconButton {
         id: clear
         anchors.right: parent.right
-        anchors.rightMargin: 4
+        anchors.rightMargin: 4 + root.trailingInset
         anchors.verticalCenter: parent.verticalCenter
         Reveal.shown: input.text.length > 0 && root.width >= 100
         symbol: "close"

@@ -7,16 +7,15 @@ import Swiftify
 Flickable {
     id: root
 
-    // pages run up under the top bar, which floats over them with no
-    // background of its own; they start below it
-    topMargin: Appearance.sizes.topBarHeight
+    // no toolbar floats over this page: only a small gap above it
+    topMargin: Appearance.sizes.pageTop
 
     readonly property real margin: Appearance.sizes.pageMargin
     readonly property bool empty: Library.searchQuery.trim().length === 0
 
     contentHeight: column.implicitHeight + 24 + Appearance.sizes.playerBarClearance
     boundsBehavior: Flickable.StopAtBounds
-    ScrollBar.vertical: StyledScrollBar { topPadding: 3 + Appearance.sizes.topBarHeight }
+    ScrollBar.vertical: StyledScrollBar { topPadding: 3 + Appearance.sizes.pageTop }
 
     /// whether something `top` down the page and `height` tall is in sight,
     /// or within `slack` of it

@@ -35,7 +35,10 @@ public:
     QCoro::Task<> playFile(QString path) override;
     QCoro::Task<> restartAudioOutput() override;
     QCoro::Task<QString> lyricsJson(QString spotifyUri) override;
+    QCoro::Task<QString> friendsJson() override;
     QCoro::Task<QString> playlistJson(QString playlistUri) override;
+    QCoro::Task<QString> stationJson(QString seedUri, QStringList previous, bool autoplay) override;
+    void reportPlayback(const QString &spotifyUri, bool playing, quint32 positionMs, quint32 durationMs) override;
 
     void play() override;
     void pause() override;

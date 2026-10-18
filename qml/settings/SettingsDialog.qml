@@ -110,7 +110,7 @@ T.Popup {
                                 Reveal.overshoot: 2.4
                                 size: 38
                                 iconSize: 20
-                                shape: root.shapes[destination.index]
+                                shape: Shapes.plain(root.shapes[destination.index])
                                 symbol: root.symbols[destination.index]
                                 hovered: destination.hovered
                             }
@@ -189,7 +189,7 @@ T.Popup {
             anchors.right: parent.right
             anchors.rightMargin: 18
             z: 2
-            shape: "cookie6"
+            shape: "circle"
             symbol: "close"
             onClicked: root.close()
             tooltip: "Close"

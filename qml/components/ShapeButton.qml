@@ -45,8 +45,8 @@ T.AbstractButton {
             anchors.fill: parent
             anchors.margins: -room
             extent: parent.width / Math.max(1, parent.width + 2 * room)
-            shape: root.shape
-            morphTo: root.morphTo
+            shape: Shapes.plain(root.shape)
+            morphTo: Shapes.plain(root.morphTo)
             morph: root.morph
             color: root.hovered ? root.hoverColor : root.color
             spinRate: root.spinRate

@@ -257,6 +257,32 @@ QCoro::Task<int> WebApi::savedSongTotal(QString accessToken)
     co_return document.object().value(QStringLiteral("total")).toInt();
 }
 
+QCoro::Task<QList<Artist>> WebApi::followedArtists(QString accessToken)
+{
+    QList<Artist> result;
+    const QUrlQuery query {{QStringLiteral("type"), QStringLiteral("artist")}, {QStringLiteral("limit"), QStringLiteral("50")}};
+    QSet<QUrl> visited;
+    QUrl next = apiUrl(QStringLiteral("/v1/me/following"), query);
+    // the artists come in a page of their own, wrapped in "artists", with a
+    // cursor for the next one
+    while (next.isValid() && !next.isEmpty()) {
+        if (visited.contains(next)) {
+            throw SpotifyError::invalidData(QStringLiteral("Spotify repeated a page URL."));
+        }
+        visited.insert(next);
+        const QJsonObject page = (co_await requestJson(next, "GET", accessToken))
+                                     .object().value(QStringLiteral("artists")).toObject();
+        for (const QJsonValue &value : page.value(QStringLiteral("items")).toArray()) {
+            if (const auto artist = json::artist(value.toObject())) {
+                result.append(*artist);
+            }
+        }
+        const QJsonValue nextValue = page.value(QStringLiteral("next"));
+        next = nextValue.isString() ? QUrl(nextValue.toString()) : QUrl();
+    }
+    co_return result;
+}
+
 QCoro::Task<QList<Song>> WebApi::recentlyPlayed(QString accessToken)
 {
     const QUrlQuery requestQuery = QUrlQuery {{QStringLiteral("limit"), QStringLiteral("20")}};
@@ -349,6 +375,21 @@ QCoro::Task<QList<Album>> WebApi::artistAlbums(Artist artist, QString accessToke
             }
         }
     });
+    co_return result;
+}
+
+QCoro::Task<QList<Album>> WebApi::latestReleases(Artist artist, QString accessToken)
+{
+    QList<Album> result;
+    const QUrlQuery query {{QStringLiteral("include_groups"), QStringLiteral("album,single")},
+                           {QStringLiteral("limit"), QStringLiteral("5")}};
+    const QJsonObject page = co_await requestPage(apiUrl(QStringLiteral("/v1/artists/%1/albums").arg(artist.id), query),
+                                                  accessToken);
+    for (const QJsonValue &value : page.value(QStringLiteral("items")).toArray()) {
+        if (const auto album = json::album(value.toObject())) {
+            result.append(*album);
+        }
+    }
     co_return result;
 }
 

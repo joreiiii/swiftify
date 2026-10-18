@@ -82,7 +82,7 @@ T.AbstractButton {
                     width: 24
                     height: 24
                     Reveal.shown: arrived && root.isCurrent && !root.hovered
-                    shape: "cookie6"
+                    shape: "circle"
                     color: Appearance.colors.primaryContainer
                     spinRate: 30
                     scale: visible ? 1 + 0.12 * Math.sin(UiState.spin * 7) : 1
@@ -280,7 +280,7 @@ T.AbstractButton {
                     height: 40
                     z: -2
                     opacity: 0
-                    shape: "sunny"
+                    shape: "circle"
                     color: Appearance.colors.primaryContainer
                 }
                 ParallelAnimation {

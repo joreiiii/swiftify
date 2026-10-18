@@ -1,5 +1,26 @@
 # Swiftify
 
+> ## spotify-accurate
+> this branch is a modified version of Swiftify built for **Spotify feature and
+> design accuracy**: it looks, navigates and behaves like the official Spotify
+> desktop app, keeps Swiftify's light Rust and Qt core, and fixes the Windows
+> build and window handling along the way. [what changed](#whats-different-on-spotify-accurate)
+
+<table border="0">
+  <tr>
+    <td><img src="/docs/screenshots/spotify-accurate/home.png" alt="home with the spotify-style sidebar and top bar" width="400"/></td>
+    <td><img src="/docs/screenshots/spotify-accurate/playlist.png" alt="a playlist" width="400"/></td>
+  </tr>
+  <tr>
+    <td><img src="/docs/screenshots/spotify-accurate/song-menu.png" alt="a song's menu with Go to Song Radio" width="400"/></td>
+    <td><img src="/docs/screenshots/spotify-accurate/radio.png" alt="a song radio page" width="400"/></td>
+  </tr>
+  <tr>
+    <td><img src="/docs/screenshots/spotify-accurate/profile.png" alt="the profile page" width="400"/></td>
+    <td><img src="/docs/screenshots/spotify-accurate/whats-new.png" alt="what's new" width="400"/></td>
+  </tr>
+</table>
+
 a spotify player for desktop, built with Qt Quick on top of a Rust core that
 wraps [librespot](https://github.com/librespot-org/librespot). it follows
 Material 3 Expressive (heavy inspo from end4) and has an immersive player,
@@ -199,3 +220,37 @@ on hyprland for example:
 bind = SUPER SHIFT, M, exec, swiftify --immersive
 bind = , XF86AudioPlay, exec, swiftify --play-pause
 ```
+
+## What's different on spotify-accurate
+
+### Spotify features
+- **Spotify Connect device.** Swiftify registers with Spotify as a Connect device named "Swiftify" and reports the song, position and play/pause. Spotify then counts it as the account's playing device, so Discord's Spotify connection shows "Listening to Spotify" automatically. You don't need an SDK or a Discord app ID.
+- **Song radio.** "Go to Song Radio" in a song's menu opens a radio page for that song, the way Spotify does: the song first, then up to 50 similar songs from Spotify's radio, with Play and Shuffle.
+- **Autoplay.** When the queue runs out, similar songs keep playing. This is on by default and can be switched off in Settings → Playback.
+- **Your Library sidebar.** Favourite Songs, pinned playlists, your playlists and the artists you follow sit in one list, each with its cover and "Playlist • owner" or "Artist". Playlists and Artists filter chips narrow the list, and the sort button switches between Spotify's order and A to Z.
+- **Search in the sidebar.** The Search entry is now a real search field. Typing opens the results, and a focused, empty field shows your recent searches. Clearing the field goes back to the page you were on before.
+- **A top bar across the whole window**, as in Spotify: the playback menu and back on the left, and What's New, Friend Activity, your account and the window buttons on the right.
+- **What's New.** The bell lists the last four weeks of releases from the artists you follow. Results are cached for 12 hours, and Spotify's rate limit is respected.
+- **Friend Activity.** Shows what the people you follow are listening to, through Spotify's own buddylist endpoint. Clicking a song plays it.
+- **Profile page.** Your picture, name, playlists, the artists you follow and what you played last, all inside the app.
+- **Spotify icon.** The Spotify logo is used for the executable, the window, the taskbar and the installer.
+
+### Design
+- All button and icon shapes are plain circles or rounded squares instead of Material's cookies, clovers and bursts. Round artwork is a plain circle, not a squiggle, and buttons no longer have wavy outlines.
+- Home and Search are the same size and line up in the sidebar. The spacing in the library header is even.
+- Pages without a toolbar start closer to the top. Only playlists keep room for their toolbar.
+- The bell and friends popups grow out of their buttons and stay put while the pointer moves.
+- Mouse-wheel scrolling moves further per notch.
+- New defaults: visualizers off, shapes off, reduced motion on, window controls on the right.
+
+### Windows fixes
+- Builds with MSVC and Qt 6.10. The code needs Qt 6.10 for `final` properties, not 6.9.
+- material-color-utilities: compound literals `(Vec3){...}` became `Vec3{...}`, which MSVC accepts.
+- The album title in the system media controls goes through `IMusicDisplayProperties2`.
+- The frameless window gets native behaviour. The empty parts of the top bar are a real Windows title bar, so dragging, Aero Snap, restoring from maximized under the cursor and double-click maximize all work. Maximize fills only the monitor's work area, so the taskbar stays visible, including an auto-hidden one. The window buttons use Windows' own maximize, restore and minimize.
+- The "Window controls on right" setting works again: off puts them on the left.
+
+### Under the hood
+- `spotify-core/src/connect_presence.rs`: the Connect device and its state reports (dealer connection, `PutStateRequest`).
+- `spotify-core`: `station_json` (radio and autoplay through `radio-apollo`), `friends_json` (buddylist).
+- Library: followed artists (`user-follow-read`). The library authorization version is now 3, so existing logins are asked to reconnect once.

@@ -52,7 +52,7 @@ T.AbstractButton {
             opacity: root.selected ? 1 : 0
             visible: opacity > 0
             radius: height / 2
-            wavy: root.selected && root.hovered
+            wavy: false
             depth: 2
             wavelength: 14
 
@@ -115,7 +115,7 @@ T.AbstractButton {
                     Reveal.overshoot: 2.4
                     size: 30
                     iconSize: 17
-                    shape: root.iconShape
+                    shape: Shapes.plain(root.iconShape)
                     keepsShape: root.keepsShape
                     symbol: root.symbol
                     color: Appearance.colors.primary

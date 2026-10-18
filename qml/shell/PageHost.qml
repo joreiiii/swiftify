@@ -34,6 +34,8 @@ Item {
         case Library.Page.Artist: return artistPage
         case Library.Page.LocalFiles: return localFilesPage
         case Library.Page.LocalTracks: return localTracksPage
+        case Library.Page.Radio: return radioPage
+        case Library.Page.Profile: return profilePage
         default: return homePage
         }
     }
@@ -206,4 +208,6 @@ Item {
     Component { id: artistPage; ArtistView {} }
     Component { id: localFilesPage; LocalFilesView {} }
     Component { id: localTracksPage; LocalTracksView {} }
+    Component { id: radioPage; RadioView {} }
+    Component { id: profilePage; ProfileView {} }
 }

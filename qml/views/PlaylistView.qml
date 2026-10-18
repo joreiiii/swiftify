@@ -29,6 +29,7 @@ Item {
     SongListPage {
         anchors.fill: parent
         Reveal.shown: root.playlist.valid
+        topInset: Appearance.sizes.topBarHeight
         songs: Library.displayedPlaylistSongs
         loading: Library.loadingSongs
         allowsPlaylistRemoval: Library.selectedPlaylistEditable
@@ -59,7 +60,6 @@ Item {
                     iconOnly: parent ? parent.compactActions : false
                     compactSize: parent ? parent.actionSize : 48
                     implicitHeight: iconOnly ? compactSize : 48
-                    wavy: true
                     symbol: "play_arrow"
                     burst: "play"
                     text: "Play"
@@ -73,7 +73,6 @@ Item {
                     iconOnly: parent ? parent.compactActions : false
                     compactSize: parent ? parent.actionSize : 48
                     implicitHeight: iconOnly ? compactSize : 48
-                    wavy: true
                     symbol: "shuffle"
                     burst: "play"
                     text: "Shuffle"

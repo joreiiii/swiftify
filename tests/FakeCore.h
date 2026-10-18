@@ -119,7 +119,12 @@ public:
         stalled = false;
     }
     QCoro::Task<QString> lyricsJson(QString uri) override { co_return co_await await(QStringLiteral("lyrics"), uri); }
+    QCoro::Task<QString> friendsJson() override { co_return co_await await(QStringLiteral("friends"), QString()); }
     QCoro::Task<QString> playlistJson(QString uri) override { co_return co_await await(QStringLiteral("playlist"), uri); }
+    QCoro::Task<QString> stationJson(QString uri, QStringList, bool autoplay) override
+    {
+        co_return co_await await(autoplay ? QStringLiteral("autoplay") : QStringLiteral("radio"), uri);
+    }
 
     void play() override
     {
@@ -131,6 +136,7 @@ public:
         log << QStringLiteral("pause");
         sounding = false;
     }
+    void reportPlayback(const QString &, bool, quint32, quint32) override {}
     void seek(quint32 positionMs) override
     {
         log << QStringLiteral("seek %1").arg(positionMs);

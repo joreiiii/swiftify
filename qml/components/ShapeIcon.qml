@@ -9,7 +9,7 @@ import Swiftify
 Item {
     id: root
 
-    property string shape: "cookie9"
+    property string shape: "circle"
     /// keeps its shape with no shapes (MaterialShape.keepsShape)
     property bool keepsShape: false
     /// what it springs into while hovered; none, and it only turns
@@ -59,8 +59,8 @@ Item {
         id: body
         anchors.fill: parent
         keepsShape: root.keepsShape
-        shape: root.fromShape
-        morphTo: root.target
+        shape: Shapes.plain(root.fromShape)
+        morphTo: Shapes.plain(root.target)
         morph: root.progress
         color: root.color
         // room for the overshoot

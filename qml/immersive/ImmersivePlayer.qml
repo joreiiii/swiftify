@@ -221,6 +221,7 @@ FocusScope {
 
     Item {
         id: topBar
+        objectName: "windowCaption"
         width: parent.width
         height: Math.max(immersiveLayout.topBarHeight, immersiveClose.y + immersiveClose.height + 2)
 
@@ -231,10 +232,7 @@ FocusScope {
         }
         TapHandler {
             acceptedButtons: Qt.LeftButton
-            onDoubleTapped: {
-                const window = root.Window.window
-                window.visibility === Window.Maximized ? window.showNormal() : window.showMaximized()
-            }
+            onDoubleTapped: App.toggleMaximized(root.Window.window)
         }
 
         IconButton {

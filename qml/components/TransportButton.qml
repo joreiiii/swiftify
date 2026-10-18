@@ -54,8 +54,8 @@ IconButton {
         opacity: root.showsShape ? 1 : 0
         scale: root.showsShape ? 1 : 0.35
         extent: 0.9
-        shape: root.hoverShape.length > 0 && !(root.toggled && root.toggledShape.length > 0) ? root.hoverShape
-             : (root.toggledShape.length > 0 ? root.toggledShape : "circle")
+        shape: Shapes.plain(root.hoverShape.length > 0 && !(root.toggled && root.toggledShape.length > 0) ? root.hoverShape
+             : (root.toggledShape.length > 0 ? root.toggledShape : "circle"))
         spinAngle: root.hoverShape.length > 0 && !(root.toggled && root.toggledShape.length > 0) ? root.hoverAngle : 0
         color: root.toggled ? (root.down ? root.scheme.secondaryContainerActive
                                          : root.hovered ? root.scheme.secondaryContainerHover : root.scheme.secondaryContainer)

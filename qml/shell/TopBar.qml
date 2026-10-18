@@ -3,22 +3,18 @@ import QtQuick
 import QtQuick.Effects
 import Swiftify
 
-// the macos unified toolbar as a material top app bar: back, the open
-// playlist's actions, a search field, and the playback menu. it has no
-// background: the pages scroll up under it, and each button sits on a shape
-// of its own. it is also the handle the window is moved by.
+// the bar over the page: the open playlist's actions and its find field. it
+// has no background: the pages scroll up under it, and each button sits on a
+// shape of its own. back, the playback menu and search are in the window's
+// top bar and the sidebar.
 Item {
     id: root
 
-    required property Window window
     property Item backdropSource
-    property bool windowControlsOnRight: false
-    property bool inspectorShown: false
     readonly property bool onPlaylist: Library.page === Library.Page.Playlist && Library.selectedPlaylist.valid
-    readonly property bool searching: Session.libraryConnected && Library.page === Library.Page.Search
     readonly property bool compact: width < 600
     readonly property real buttonSize: width < 420 ? 26 : (compact ? 34 : 46)
-    readonly property real searchLeftEdge: back.x + back.width + 8
+    readonly property real searchLeftEdge: 12
     readonly property real searchRightEdge: rightControls.x - 8
     // Reserve the collapsed field's space even while its overlay is focused.
     readonly property real reservedSearchWidth: Math.max(40, Math.min(340, searchRightEdge - searchLeftEdge - (onPlaylist ? playlistActions.implicitWidth + 8 : 0)))
@@ -32,58 +28,16 @@ Item {
 
     implicitHeight: Appearance.sizes.topBarHeight
 
-    DragHandler {
-        target: null
-        grabPermissions: PointerHandler.CanTakeOverFromAnything
-        onActiveChanged: if (active)
-            root.window.startSystemMove()
-    }
-    TapHandler {
-        acceptedButtons: Qt.LeftButton
-        onDoubleTapped: root.window.visibility === Window.Maximized ? root.window.showNormal() : root.window.showMaximized()
-    }
-
     Item {
         id: toolbarButtons
         anchors.fill: parent
 
-        ToolbarButton {
-            id: back
-            effect: ToolbarButton.NudgeLeft
-            anchors.left: parent.left
-            anchors.leftMargin: 12
-            anchors.verticalCenter: parent.verticalCenter
-            size: root.buttonSize
-            iconSize: root.compact ? 20 : 26
-            symbol: "arrow_back"
-            // it sits on an arrow, pointing the way it goes
-            shape: "arrow"
-            shapeAngle: -90
-            turnsOnHover: false
-            enabled: Library.canGoBack
-            onClicked: Library.goBack()
-            tooltip: "Back"
-        }
-
-        Row {
+        Item {
             id: rightControls
             anchors.right: parent.right
-            anchors.rightMargin: 12 + (root.windowControlsOnRight && !root.inspectorShown ? 96 : 0)
-            anchors.verticalCenter: parent.verticalCenter
-            spacing: 4
-
-            ToolbarButton {
-                id: overflow
-                effect: ToolbarButton.Spin
-                size: root.buttonSize
-                iconSize: root.compact ? 20 : 26
-                shape: "cookie9"
-                anchors.verticalCenter: parent.verticalCenter
-                symbol: "more_vert"
-                onClicked: playbackMenu.popupAt(overflow, 0, overflow.height)
-                tooltip: "Playback"
-            }
-
+            anchors.rightMargin: 4
+            width: 0
+            height: parent.height
         }
 
         Row {
@@ -98,7 +52,7 @@ Item {
                 effect: ToolbarButton.Spin
                 size: root.buttonSize
                 iconSize: root.compact ? 19 : 26
-                shape: "clover4"
+                shape: "circle"
                 symbol: "add"
                 onClicked: Library.selectedPlaylist.isLocal ? UiState.createLocalPlaylistRequested(null) : UiState.beginCreatePlaylist()
                 tooltip: "New Playlist"
@@ -108,7 +62,7 @@ Item {
                 Reveal.shown: Library.selectedPlaylistEditable
                 size: root.buttonSize
                 iconSize: root.compact ? 19 : 26
-                shape: "puffy"
+                shape: "circle"
                 symbol: "edit"
                 onClicked: UiState.editPlaylistRequested()
                 tooltip: "Edit Playlist"
@@ -118,7 +72,7 @@ Item {
                 Reveal.shown: !Library.selectedPlaylist.isLocal
                 size: root.buttonSize
                 iconSize: root.compact ? 19 : 26
-                shape: "cookie6"
+                shape: "circle"
                 symbol: "share"
                 onClicked: {
                     App.copyToClipboard(root.playlistLink);
@@ -131,7 +85,7 @@ Item {
                 effect: ToolbarButton.Pop
                 size: root.buttonSize
                 iconSize: root.compact ? 19 : 26
-                shape: "sunny"
+                shape: "circle"
                 symbol: "more_horiz"
                 onClicked: moreMenu.popupAt(more, 0, more.height)
                 tooltip: "More"
@@ -141,7 +95,7 @@ Item {
                 effect: ToolbarButton.Pop
                 size: root.buttonSize
                 iconSize: root.compact ? 19 : 26
-                shape: "flower"
+                shape: "circle"
                 symbol: "sort"
                 onClicked: sortMenu.popupAt(sort, 0, sort.height)
                 tooltip: "Sort Options"
@@ -227,21 +181,15 @@ Item {
         x: root.searchRightEdge - width
         anchors.verticalCenter: parent.verticalCenter
         z: editing ? 9 : 0
-        Reveal.shown: root.searching || root.onPlaylist
+        Reveal.shown: root.onPlaylist
         width: {
             if (!visible)
                 return 0;
             return editing ? Math.max(40, Math.min(340, root.searchRightEdge - root.searchLeftEdge)) : root.reservedSearchWidth;
         }
-        placeholder: root.searching ? "Search Spotify" : "Find in Playlist"
-        text: root.searching ? Library.searchQuery : Library.playlistFilterQuery
-        onTextChanged: {
-            if (root.searching) {
-                Library.searchQuery = text;
-            } else if (root.onPlaylist) {
-                Library.playlistFilterQuery = text;
-            }
-        }
+        placeholder: "Find in Playlist"
+        text: Library.playlistFilterQuery
+        onTextChanged: if (root.onPlaylist) Library.playlistFilterQuery = text
 
         Behavior on width {
             ElementMoveSmall {}
@@ -251,11 +199,6 @@ Item {
     MusicPicker {
         id: trackPicker
         playlistId: Library.selectedPlaylist.isLocal ? Library.selectedPlaylist.id : ""
-    }
-
-    MenuLoader {
-        id: playbackMenu
-        sourceComponent: PlaybackMenu {}
     }
 
     MenuLoader {

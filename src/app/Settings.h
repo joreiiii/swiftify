@@ -28,6 +28,8 @@ class Settings : public QObject {
     Q_PROPERTY(double visualizerSensitivity READ visualizerSensitivity WRITE setVisualizerSensitivity NOTIFY visualizerSensitivityChanged FINAL)
     Q_PROPERTY(int streamingQuality READ streamingQuality WRITE setStreamingQuality NOTIFY streamingQualityChanged FINAL)
     Q_PROPERTY(bool crossfadeEnabled READ crossfadeEnabled WRITE setCrossfadeEnabled NOTIFY crossfadeEnabledChanged FINAL)
+    /// songs like the last one play on once the queue runs out
+    Q_PROPERTY(bool autoplayEnabled READ autoplayEnabled WRITE setAutoplayEnabled NOTIFY autoplayEnabledChanged FINAL)
     Q_PROPERTY(int crossfadeDurationSeconds READ crossfadeDurationSeconds WRITE setCrossfadeDurationSeconds NOTIFY crossfadeDurationSecondsChanged FINAL)
     /// how much of the songs streamed is kept, so playing one again needs no
     /// download: 500, 1000 or 2000 megabytes
@@ -95,6 +97,8 @@ public:
     void setStreamingQuality(int value);
     bool crossfadeEnabled() const { return m_crossfadeEnabled; }
     void setCrossfadeEnabled(bool value);
+    bool autoplayEnabled() const { return m_autoplayEnabled; }
+    void setAutoplayEnabled(bool value);
     int crossfadeDurationSeconds() const { return m_crossfadeDurationSeconds; }
     void setCrossfadeDurationSeconds(int value);
     /// animate the immersive background with the music
@@ -153,6 +157,7 @@ signals:
     void visualizerSensitivityChanged();
     void streamingQualityChanged();
     void crossfadeEnabledChanged();
+    void autoplayEnabledChanged();
     void crossfadeDurationSecondsChanged();
     void songCacheMegabytesChanged();
     void livingBackdropChanged();
@@ -180,13 +185,14 @@ private:
 
     QSettings m_store;
 
-    bool m_visualizersEnabled = true;
+    bool m_visualizersEnabled = false;
     bool m_circularVisualizer = false;
     bool m_roundArtwork = false;
     QString m_visualizerShape = QStringLiteral("bars");
     double m_visualizerSensitivity = 1.0;
     int m_streamingQuality = 160;
     bool m_crossfadeEnabled = false;
+    bool m_autoplayEnabled = true;
     int m_crossfadeDurationSeconds = 5;
     int m_songCacheMegabytes = 1000;
     bool m_livingBackdrop = true;
@@ -197,14 +203,14 @@ private:
     bool m_allPlaylistsExpanded = false;
     QString m_immersivePlayerPanel = QStringLiteral("lyrics");
     QString m_sleepTimerFade = QStringLiteral("finalSeconds");
-    bool m_reduceMotion = false;
+    bool m_reduceMotion = true;
     bool m_performanceMode = false;
-    bool m_noShapes = false;
+    bool m_noShapes = true;
     QString m_themeSource = QStringLiteral("spotify");
     QString m_themeMode = QStringLiteral("system");
     QString m_matugenColorsPath = QString();
     bool m_showWindowControls = true;
-    bool m_windowControlsOnRight = false;
+    bool m_windowControlsOnRight = true;
 #ifdef Q_OS_WIN
     bool m_nativeTitleBar = false;
 #else

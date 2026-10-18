@@ -17,6 +17,13 @@ QtObject {
         "pixelCircle", "pixelTriangle", "bun", "heart", "softCookie", "squircle"
     ]
 
+    /// what a button or an icon sits on: a circle, or a rounded square for
+    /// the square ones. the lobed shapes stay for the decorations.
+    function plain(name: string): string {
+        if (name.length === 0) return name
+        return name === "square" || name === "squircle" ? "squircle" : "circle"
+    }
+
     /// (lobes, depth, sharpness, kind), for shape_mask.frag: lobed shapes
     /// bulge from a circle, depth is how far the valleys sink as a share of
     /// the radius, and sharpness under 1 puffs the lobes while over 1 points

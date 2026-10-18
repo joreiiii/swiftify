@@ -72,7 +72,7 @@ T.Popup {
                 visible: root.symbol.length > 0
                 size: 40
                 iconSize: 21
-                shape: root.iconShape
+                shape: Shapes.plain(root.iconShape)
                 symbol: root.symbol
             }
             TitleText {

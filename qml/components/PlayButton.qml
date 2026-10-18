@@ -2,8 +2,8 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import Swiftify
 
-// the play button wherever music starts: a soft five-bump cookie while
-// paused that springs into a nine-scallop one, turning, while music plays.
+// the play button wherever music starts: a plain circle, paused or
+// playing.
 // the glyph pops as it changes.
 ShapeButton {
     id: root
@@ -12,15 +12,13 @@ ShapeButton {
     property color iconColor: Appearance.colors.onPrimary
     property real iconSize: Math.round(width * 0.52)
 
-    shape: "softCookie"
-    morphTo: "cookie9"
+    shape: "circle"
+    morphTo: "circle"
     morphed: playing
-    spinRate: 25
+    spinRate: 0
     tooltip: playing ? "Pause" : "Play"
 
     onPlayingChanged: if (!Appearance.performanceMode) pop.restart()
-    // starting music throws out a little burst of cookies
-    onClicked: if (!playing) UiState.burst(root, "play")
 
     contentItem: Item {
         MaterialSymbol {

@@ -116,6 +116,7 @@ void Settings::load()
         m_songCacheMegabytes = cache == 500 || cache == 2000 ? cache : 1000;
     }
     m_crossfadeEnabled = stored<bool>(m_store, "crossfadeEnabled", m_crossfadeEnabled);
+    m_autoplayEnabled = stored<bool>(m_store, "autoplayEnabled", m_autoplayEnabled);
     m_crossfadeDurationSeconds = std::clamp(
         stored<int>(m_store, "crossfadeDurationSeconds", m_crossfadeDurationSeconds), 1, 12);
     m_livingBackdrop = stored<bool>(m_store, "livingBackdrop", m_livingBackdrop);
@@ -245,6 +246,16 @@ void Settings::setCrossfadeEnabled(bool value)
     m_crossfadeEnabled = value;
     m_store.setValue(QStringLiteral("crossfadeEnabled"), value);
     emit crossfadeEnabledChanged();
+}
+
+void Settings::setAutoplayEnabled(bool value)
+{
+    if (m_autoplayEnabled == value) {
+        return;
+    }
+    m_autoplayEnabled = value;
+    m_store.setValue(QStringLiteral("autoplayEnabled"), value);
+    emit autoplayEnabledChanged();
 }
 
 void Settings::setCrossfadeDurationSeconds(int raw)

@@ -215,14 +215,37 @@ QCoro::Task<QString> RustCore::lyricsJson(QString spotifyUri)
     co_return co_await request([&](quint64 id) { swiftify_core_lyrics_json(m_core, id, uri.constData()); });
 }
 
+QCoro::Task<QString> RustCore::friendsJson()
+{
+    co_return co_await request([&](quint64 id) { swiftify_core_friends_json(m_core, id); });
+}
+
 QCoro::Task<QString> RustCore::playlistJson(QString playlistUri)
 {
     const QByteArray uri = playlistUri.toUtf8();
     co_return co_await request([&](quint64 id) { swiftify_core_playlist_json(m_core, id, uri.constData()); });
 }
 
+QCoro::Task<QString> RustCore::stationJson(QString seedUri, QStringList previous, bool autoplay)
+{
+    const QByteArray uri = seedUri.toUtf8();
+    const QByteArray left = previous.join(u',').toUtf8();
+    co_return co_await request([&](quint64 id) {
+        if (autoplay) {
+            swiftify_core_autoplay_json(m_core, id, uri.constData(), left.constData());
+        } else {
+            swiftify_core_radio_json(m_core, id, uri.constData(), left.constData());
+        }
+    });
+}
+
 void RustCore::play() { throwIfError(swiftify_core_play(m_core)); }
 void RustCore::pause() { throwIfError(swiftify_core_pause(m_core)); }
+void RustCore::reportPlayback(const QString &spotifyUri, bool playing, quint32 positionMs, quint32 durationMs)
+{
+    swiftify_core_report_playback(m_core, spotifyUri.toUtf8().constData(), playing, positionMs, durationMs);
+}
+
 void RustCore::seek(quint32 positionMs) { throwIfError(swiftify_core_seek(m_core, positionMs)); }
 void RustCore::setVolume(float volume) { throwIfError(swiftify_core_set_volume(m_core, volume)); }
 float RustCore::volume() const { return swiftify_core_volume(m_core); }

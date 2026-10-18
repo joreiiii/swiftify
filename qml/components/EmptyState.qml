@@ -38,7 +38,7 @@ Column {
         anchors.horizontalCenter: parent.horizontalCenter
         width: 80
         height: 80
-        shape: root.shape
+        shape: Shapes.plain(root.shape)
         color: root.scheme.secondaryContainer
 
         // little shapes about the badge, behind it

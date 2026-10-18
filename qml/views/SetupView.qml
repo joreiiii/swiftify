@@ -7,13 +7,12 @@ import Swiftify
 Flickable {
     id: root
 
-    // pages run up under the top bar, which floats over them with no
-    // background of its own; they start below it
-    topMargin: Appearance.sizes.topBarHeight
+    // no toolbar floats over this page: only a small gap above it
+    topMargin: Appearance.sizes.pageTop
 
     contentHeight: Math.max(height, column.implicitHeight + 72)
     boundsBehavior: Flickable.StopAtBounds
-    ScrollBar.vertical: StyledScrollBar { topPadding: 3 + Appearance.sizes.topBarHeight }
+    ScrollBar.vertical: StyledScrollBar { topPadding: 3 + Appearance.sizes.pageTop }
 
     component Step: Row {
         id: step

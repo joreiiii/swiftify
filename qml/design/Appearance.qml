@@ -98,6 +98,8 @@ QtObject {
         final readonly property real smallArtworkRadius: 7
         final readonly property real sideSheetWidth: 320
         final readonly property real topBarHeight: 64
+        /// a page's top gap where no toolbar floats over it
+        final readonly property real pageTop: 16
         final readonly property real playerBarClearance: 120
     }
     final readonly property Sizes sizes: Sizes {}

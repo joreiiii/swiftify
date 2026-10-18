@@ -3,8 +3,13 @@
 #include "app/ErrorCenter.h"
 #include "app/Settings.h"
 #include "core/PlaybackCore.h"
+#include "spotify/SpotifyError.h"
+#include "spotify/SpotifyJson.h"
 #include "spotify/SpotifySession.h"
 
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QLoggingCategory>
 #include <QQmlEngine>
 #include <QRandomGenerator>
@@ -135,6 +140,7 @@ void PlaybackController::setPlaying(bool playing)
     }
     m_playing = playing;
     emit playingChanged();
+    reportToConnect();
     updatePlaybackWorkers();
     if (m_playing) {
         preloadNextTrack();
@@ -162,6 +168,8 @@ void PlaybackController::setLivePosition(quint32 positionMs)
     if (positionMs / 1000 != m_publishedPositionMs / 1000 || positionMs < m_publishedPositionMs) {
         m_publishedPositionMs = positionMs;
         emit positionChanged();
+        // a seek shows to spotify too; playing on is no change to it
+        reportToConnect();
     }
     if (couldRestart != (positionMs > kRestartThresholdMs)) {
         emit queueChanged();
@@ -174,7 +182,15 @@ void PlaybackController::setDuration(quint32 durationMs)
     if (m_durationMs != durationMs) {
         m_durationMs = durationMs;
         emit durationChanged();
+        reportToConnect();
     }
+}
+
+void PlaybackController::reportToConnect()
+{
+    // a file of the person's own is nothing spotify knows: it hears of none
+    const bool spotify = m_currentSong && !m_currentSong->isLocalFile();
+    m_core->reportPlayback(spotify ? m_currentSong->uri : QString(), m_playing, m_livePositionMs, m_durationMs);
 }
 
 // --- queue ---------------------------------------------------------------------------
@@ -404,6 +420,10 @@ void PlaybackController::playLoadingTest()
 
 void PlaybackController::beginPlayback(const Song &song, const QList<Song> &queue, bool fromSearch)
 {
+    // a queue of its own: whatever autoplay was fetching was for the old one
+    m_autoplayRequest.cancel();
+    m_autoplayResumes = false;
+    m_autoplaySeedInstance = 0;
     const bool inQueue = std::any_of(queue.begin(), queue.end(), [&](const Song &item) { return item.isSameInstance(song); });
     m_queue = inQueue ? queue : QList<Song> {song};
     m_history.clear();
@@ -504,6 +524,7 @@ void PlaybackController::startPlayback(const Song &song, bool recordHistory, boo
     loadLyrics(song);
     queueDidChange();
     syncMediaSession();
+    topUpAutoplay();
 
     detach(runStartPlayback(song, token, fromSearch, crossfadeDurationMs));
     if (crossfadeDurationMs > 0) {
@@ -854,7 +875,9 @@ void PlaybackController::skipForward()
 {
     if (const auto next = nextQueueSong(m_repeatMode == RepeatMode::All)) {
         startPlayback(*next);
+        return;
     }
+    continueWithAutoplay();
 }
 
 void PlaybackController::seek(int requestedMs)
@@ -1069,6 +1092,9 @@ void PlaybackController::handleEndOfTrack()
         startPlayback(*next);
         return;
     }
+    if (continueWithAutoplay()) {
+        return;
+    }
     // the queue is over, and the core is told so too: the offline output never
     // paused itself, and would play whatever it was handed next. neither
     // output can resume from the end, so play starts the song over.
@@ -1080,6 +1106,103 @@ void PlaybackController::handleEndOfTrack()
     setPlaying(false);
     setStatus(QStringLiteral("Finished"));
     syncMediaSession();
+}
+
+// --- song radio and autoplay ---------------------------------------------------------
+
+namespace {
+
+/// the items page PlaybackCore::stationJson completes with
+QList<Song> stationSongs(const QString &payload)
+{
+    QList<Song> songs;
+    const QJsonObject page = QJsonDocument::fromJson(payload.toUtf8()).object();
+    for (const QJsonValue &value : page.value(QStringLiteral("items")).toArray()) {
+        if (const auto song = json::wrappedTrack(value.toObject())) {
+            songs.append(*song);
+        }
+    }
+    return songs;
+}
+
+/// how many songs that just played autoplay is told to leave out
+constexpr int kAutoplayMemory = 50;
+
+} // namespace
+
+void PlaybackController::topUpAutoplay()
+{
+    if (!m_settings->autoplayEnabled() || !m_currentSong || m_currentSong->isLocalFile()
+        || m_repeatMode != RepeatMode::Off || nextQueueSong(false)) {
+        return;
+    }
+    if (m_autoplaySeedInstance == m_currentSong->instanceId) {
+        return;
+    }
+    m_autoplaySeedInstance = m_currentSong->instanceId;
+
+    QStringList previous;
+    const QList<Song> &queue = activeQueue();
+    for (auto it = queue.crbegin(); it != queue.crend() && previous.size() < kAutoplayMemory; ++it) {
+        if (!it->isLocalFile() && !previous.contains(it->uri)) {
+            previous.append(it->uri);
+        }
+    }
+    detach(runTopUpAutoplay(*m_currentSong, previous, m_autoplayRequest.renew()));
+}
+
+bool PlaybackController::continueWithAutoplay()
+{
+    if (!m_settings->autoplayEnabled() || !m_currentSong || m_currentSong->isLocalFile()
+        || m_repeatMode != RepeatMode::Off) {
+        return false;
+    }
+    if (const auto next = nextQueueSong(false)) {
+        startPlayback(*next);
+        return true;
+    }
+    m_autoplayResumes = true;
+    if (m_autoplaySeedInstance != m_currentSong->instanceId) {
+        topUpAutoplay();
+    }
+    return true;
+}
+
+QCoro::Task<> PlaybackController::runTopUpAutoplay(Song seed, QStringList previous, CancelToken token)
+{
+    QList<Song> songs;
+    try {
+        co_await m_session->ensureFreshPlaybackConnection();
+        if (isCancelled(token)) {
+            co_return;
+        }
+        songs = stationSongs(co_await m_core->stationJson(seed.uri, previous, true));
+    } catch (const Cancelled &) {
+        co_return;
+    } catch (const SpotifyError &error) {
+        if (!isCancelled(token)) {
+            m_autoplayResumes = false;
+            reportError(QStringLiteral("Finding songs to play on"), error.message());
+        }
+        co_return;
+    }
+    if (isCancelled(token) || songs.isEmpty()) {
+        m_autoplayResumes = false;
+        co_return;
+    }
+    // what plays on joins the end of the queue, after whatever was added
+    // while spotify was answering
+    m_queue.append(songs);
+    if (m_shuffle) {
+        m_shuffledQueue.append(songs);
+    }
+    queueDidChange();
+    syncMediaSession();
+    if (std::exchange(m_autoplayResumes, false)) {
+        if (const auto next = nextQueueSong(false)) {
+            startPlayback(*next);
+        }
+    }
 }
 
 // --- lyrics -------------------------------------------------------------------------

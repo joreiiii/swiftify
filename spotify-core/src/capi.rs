@@ -449,6 +449,46 @@ async_call!(
         core.playlist_json(playlist_uri).await
     }
 );
+/// what plays, for spotify connect (SpotifyCore::report_playback).
+///
+/// # Safety
+/// `core` is null or live; `spotify_uri` is null or a valid string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn swiftify_core_report_playback(
+    core: *const SwiftifyCore,
+    spotify_uri: *const c_char,
+    playing: bool,
+    position_ms: u32,
+    duration_ms: u32,
+) {
+    // SAFETY: forwarded from the caller.
+    let Some(handle) = (unsafe { handle(core) }) else {
+        return;
+    };
+    // SAFETY: forwarded from the caller.
+    let uri = unsafe { read_str(spotify_uri) }.unwrap_or_default();
+    handle.core.report_playback(uri, playing, position_ms, duration_ms);
+}
+
+async_call!(
+    /// completes with what the people the person follows listen to, as json.
+    swiftify_core_friends_json() => |core| {
+        core.friends_json().await
+    }
+);
+async_call!(
+    /// completes with a song radio for a track, as a playlist page of json.
+    swiftify_core_radio_json(seed_uri, previous) => |core| {
+        core.station_json(seed_uri, previous, false).await
+    }
+);
+async_call!(
+    /// completes with songs to play on after a track once the queue is out,
+    /// as a playlist page of json.
+    swiftify_core_autoplay_json(seed_uri, previous) => |core| {
+        core.station_json(seed_uri, previous, true).await
+    }
+);
 
 /// what a music file's tags say, as json (crate::local::LocalTags), or null
 /// with `*error` set. an embedded cover is written into `artwork_dir`. it
