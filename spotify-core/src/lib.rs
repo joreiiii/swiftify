@@ -24,6 +24,7 @@ use librespot::{
 use serde::Serialize;
 use tokio::{sync::watch, time::timeout};
 
+mod artist;
 mod connect_presence;
 mod dsp;
 mod file_playback;
@@ -1046,6 +1047,12 @@ impl SpotifyCore {
     /// web api no longer gives the songs of
     pub async fn playlist_json(&self, playlist_uri: String) -> Result<String, String> {
         playlist::playlist_json(&self.session()?, &playlist_uri).await
+    }
+
+    /// an artist's top songs and albums, read through the session, as json
+    /// (`artist::artist_json`)
+    pub async fn artist_json(&self, artist_uri: String) -> Result<String, String> {
+        artist::artist_json(&self.session()?, &artist_uri).await
     }
 
     /// what the people the person follows are listening to, as spotify's

@@ -19,6 +19,8 @@ SongListPage {
     }
 
     songs: Library.albumSongs
+    // one artist, one sound: nothing to narrow
+    filterable: false
     loading: Library.loadingSongs
     loadingText: "Loading album…"
 

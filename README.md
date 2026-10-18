@@ -233,6 +233,12 @@ bind = , XF86AudioPlay, exec, swiftify --play-pause
 - **What's New.** The bell lists the last four weeks of releases from the artists you follow. Results are cached for 12 hours, and Spotify's rate limit is respected.
 - **Friend Activity.** Shows what the people you follow are listening to, through Spotify's own buddylist endpoint. Clicking a song plays it.
 - **Profile page.** Your picture, name, playlists, the artists you follow and what you played last, all inside the app.
+- **Now Playing view.** A panel beside the page, toggled from the player bar next to lyrics and the queue. It shows the cover instead of a music video, the song with share and save buttons, an About the artist card with their picture and biography, and the next song in the queue.
+- **Filter chips on song lists.** Playlists, Favourite Songs, radio pages and local tracks get a row of chips that narrows the list. The chips show the artists heard most in the list. Spotify's mood and genre chips come from an internal service other apps can't reach, and the Web API's artist genres are refused for development apps, so genre chips only appear where Spotify provides them.
+- **Song menu like Spotify's.** Add to playlist, save or remove from Favourite Songs (a green filled check once saved), add to queue, play next, remove from this playlist, a sleep timer, then the song's radio, artist and album, and Share.
+- **Share.** Share buttons open Windows' own share sheet with the link instead of copying it. Menu items that only opened the Spotify website are gone.
+- **Artist pages load again.** They read top songs, albums, the portrait and the biography through the Spotify session, as Spotify's apps do. The Web API gives development apps no top tracks and rate-limits album pages hard. What's New now uses the same path.
+- **Home greets you** with "Hey, (your name)!".
 - **Spotify icon.** The Spotify logo is used for the executable, the window, the taskbar and the installer.
 
 ### Design
@@ -243,7 +249,10 @@ bind = , XF86AudioPlay, exec, swiftify --play-pause
 - Mouse-wheel scrolling moves further per notch.
 - New defaults: visualizers off, shapes off, reduced motion on, window controls on the right.
 - One typeface throughout: headings are the same face as the rest of the UI, just larger and bolder, instead of the round, wide variable-axis titles.
-- Spotify's icons for saving a song (a plus in a circle, a green check once saved), for lyrics (a microphone) and for the queue (a box over two lines).
+- Spotify's icons for saving a song (a plus in a circle, a green check once saved), for lyrics (a microphone held at a slant), for the queue (a box over two lines) and for the Now Playing view.
+- Nothing bounces: reveals, the side panel, hovered rows and playlist loading settle on short eases. The player bar no longer lifts its seek line or blurs on hover; the song only fades while the times show.
+- The Home spotlight card shows just its play and menu buttons, without the wave or the Play/Pause label.
+- A click anywhere outside a text field, the title bar included, takes its focus away, so the recent searches close.
 - The start screen says "Swiftify (Modded)" and Settings → About says "Swiftify (Spotify Accurate, Modded by jorei_)".
 
 ### Windows fixes
@@ -255,5 +264,6 @@ bind = , XF86AudioPlay, exec, swiftify --play-pause
 
 ### Under the hood
 - `spotify-core/src/connect_presence.rs`: the Connect device and its state reports (dealer connection, `PutStateRequest`).
-- `spotify-core`: `station_json` (radio and autoplay through `radio-apollo`), `friends_json` (buddylist).
+- `spotify-core`: `station_json` (radio and autoplay through `radio-apollo`), `friends_json` (buddylist), `artist.rs` (`artist_json`: top tracks, albums, portrait and biography from the artist metadata).
+- `SongFilter` (filter chips), `FocusRelease` (focus leaves text fields on an outside click), `NowPlayingPanel`, and the drawn `QueueGlyph`, `LyricsGlyph` and `NowPlayingGlyph`.
 - Library: followed artists (`user-follow-read`). The library authorization version is now 3, so existing logins are asked to reconnect once.

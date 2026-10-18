@@ -144,7 +144,7 @@ fn append_page(uris: &mut Vec<String>, list: &SelectedListContent) -> bool {
 
 /// each track's details by its uri. episodes and local files are left out,
 /// as the web api path leaves them out
-async fn track_metadata(
+pub(crate) async fn track_metadata(
     session: &Session,
     uris: &[String],
 ) -> Result<HashMap<String, TrackPayload>, String> {
@@ -198,17 +198,17 @@ async fn track_metadata(
 }
 
 #[derive(Serialize)]
-struct PagePayload {
-    items: Vec<ItemPayload>,
+pub(crate) struct PagePayload {
+    pub(crate) items: Vec<ItemPayload>,
 }
 
 #[derive(Serialize)]
-struct ItemPayload {
-    item: TrackPayload,
+pub(crate) struct ItemPayload {
+    pub(crate) item: TrackPayload,
 }
 
 #[derive(Clone, Serialize)]
-struct TrackPayload {
+pub(crate) struct TrackPayload {
     #[serde(rename = "type")]
     kind: &'static str,
     uri: String,
@@ -220,7 +220,7 @@ struct TrackPayload {
 }
 
 #[derive(Clone, Serialize)]
-struct ArtistPayload {
+pub(crate) struct ArtistPayload {
     id: String,
     uri: String,
     name: String,
@@ -236,7 +236,7 @@ struct AlbumPayload {
 }
 
 #[derive(Clone, Serialize)]
-struct ImagePayload {
+pub(crate) struct ImagePayload {
     url: String,
     width: i32,
     height: i32,
@@ -262,7 +262,7 @@ impl TrackPayload {
 }
 
 impl ArtistPayload {
-    fn new(artist: &metadata::Artist) -> Option<Self> {
+    pub(crate) fn new(artist: &metadata::Artist) -> Option<Self> {
         let uri = SpotifyUri::try_from(artist).ok()?;
         Some(Self {
             id: uri.to_id().ok()?,
@@ -290,7 +290,7 @@ impl AlbumPayload {
 }
 
 impl ImagePayload {
-    fn new(image: &metadata::Image) -> Option<Self> {
+    pub(crate) fn new(image: &metadata::Image) -> Option<Self> {
         let file_id = image.file_id();
         if file_id.is_empty() {
             return None;

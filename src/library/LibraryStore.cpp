@@ -179,6 +179,80 @@ void LibraryStore::attachPlayer(PlaybackController *player)
     connect(player, &PlaybackController::playedFromSearch, this, &LibraryStore::recordSearchPlayback);
 }
 
+QCoro::Task<QHash<QString, QStringList>> LibraryStore::genresOf(QStringList artistIds)
+{
+    QStringList missing;
+    for (const QString &id : artistIds) {
+        if (!id.isEmpty() && !m_artistGenres.contains(id) && !missing.contains(id)) {
+            missing.append(id);
+        }
+    }
+    if (!missing.isEmpty() && !m_genresUnavailable && m_session->hasLibraryToken()) {
+        bool anyGenre = false;
+        try {
+            for (qsizetype start = 0; start < missing.size(); start += 50) {
+                const QStringList batch = missing.mid(start, 50);
+                const QHash<QString, QStringList> found = co_await m_session->withLibraryAccessToken<QHash<QString, QStringList>>(
+                    [this, batch](QString accessToken) { return m_session->webApi().artistGenres(batch, accessToken); });
+                for (const QString &id : batch) {
+                    const QStringList genres = found.value(id);
+                    anyGenre = anyGenre || !genres.isEmpty();
+                    m_artistGenres.insert(id, genres);
+                }
+            }
+            // spotify gives development apps no genres at all: stop asking
+            if (!anyGenre && missing.size() >= 10) {
+                m_genresUnavailable = true;
+            }
+        } catch (const Cancelled &) {
+        } catch (const SpotifyError &error) {
+            qCWarning(lcLibrary).noquote() << "artist genres:" << error.message();
+            m_genresUnavailable = true;
+        }
+    }
+    QHash<QString, QStringList> result;
+    for (const QString &id : artistIds) {
+        result.insert(id, m_artistGenres.value(id));
+    }
+    co_return result;
+}
+
+void LibraryStore::loadArtistCard(const QString &artistId)
+{
+    if (artistId.isEmpty() || m_artistCard.value(QStringLiteral("id")).toString() == artistId) {
+        return;
+    }
+    if (const auto cached = m_artistCards.constFind(artistId); cached != m_artistCards.cend()) {
+        m_artistCard = *cached;
+        emit artistCardChanged();
+        return;
+    }
+    detach(runArtistCard(artistId));
+}
+
+QCoro::Task<> LibraryStore::runArtistCard(QString artistId)
+{
+    try {
+        co_await m_session->ensureFreshPlaybackConnection();
+        const QJsonObject page = QJsonDocument::fromJson(
+            (co_await m_session->core()->artistJson(QStringLiteral("spotify:artist:") + artistId)).toUtf8()).object();
+        // the largest picture is the last
+        const QJsonArray images = page.value(QStringLiteral("images")).toArray();
+        QVariantMap card {
+            {QStringLiteral("id"), artistId},
+            {QStringLiteral("name"), page.value(QStringLiteral("name")).toString()},
+            {QStringLiteral("imageUrl"), images.isEmpty() ? QString() : images.last().toObject().value(QStringLiteral("url")).toString()},
+            {QStringLiteral("biography"), page.value(QStringLiteral("biography")).toString()},
+        };
+        m_artistCards.insert(artistId, card);
+        m_artistCard = card;
+        emit artistCardChanged();
+    } catch (const Cancelled &) {
+    } catch (const SpotifyError &error) {
+        qCWarning(lcLibrary).noquote() << "artist card:" << error.message();
+    }
+}
+
 void LibraryStore::playTrackUri(const QString &uri)
 {
     if (uri.startsWith(QLatin1StringView("spotify:track:"))) {
@@ -647,15 +721,35 @@ QCoro::Task<> LibraryStore::runNewReleases()
     QSet<QString> seen;
     QString message;
     const QList<Artist> artists = m_followedArtists->items();
+    // read through the session, as the artist pages are: the web api's
+    // album pages are rate limited hard
+    try {
+        co_await m_session->ensureFreshPlaybackConnection();
+    } catch (const Cancelled &) {
+        setLoading(m_loadingNewReleases, false);
+        co_return;
+    } catch (const SpotifyError &error) {
+        qCWarning(lcLibrary).noquote() << "what's new:" << error.message();
+        setLoading(m_loadingNewReleases, false);
+        co_return;
+    }
+    const auto releasesOf = [this](Artist artist) -> QCoro::Task<QList<Album>> {
+        const QString uri = artist.uri.isEmpty() ? QStringLiteral("spotify:artist:") + artist.id : artist.uri;
+        const QJsonObject page = QJsonDocument::fromJson((co_await m_session->core()->artistJson(uri)).toUtf8()).object();
+        QList<Album> albums;
+        for (const QJsonValue &value : page.value(QStringLiteral("albums")).toArray()) {
+            if (const auto album = json::album(value.toObject())) {
+                albums.append(*album);
+            }
+        }
+        co_return albums;
+    };
     // a few at once, so as not to burst past spotify's rate limit
     constexpr qsizetype kAtOnce = 4;
     for (qsizetype start = 0; start < artists.size() && message.isEmpty(); start += kAtOnce) {
         std::vector<QCoro::Task<QList<Album>>> batch;
         for (qsizetype index = start; index < std::min(artists.size(), start + kAtOnce); ++index) {
-            batch.push_back(m_session->withLibraryAccessToken<QList<Album>>(
-                [this, artist = artists.at(index)](QString accessToken) {
-                    return m_session->webApi().latestReleases(artist, accessToken);
-                }));
+            batch.push_back(releasesOf(artists.at(index)));
         }
         // each started is awaited to its end, even after one fails
         for (auto &task : batch) {
@@ -928,37 +1022,40 @@ QCoro::Task<> LibraryStore::runArtistLoad(Artist artist, CancelToken token)
 {
     const Destination target {Page::Artist, {}, {}, artist};
     try {
-        // top tracks are the reason you open an artist. albums still load if
-        // they fail.
+        // read through the session, as spotify's apps read it: the web api
+        // gives development apps no top songs, and its album pages are
+        // rate limited hard
+        co_await m_session->ensureFreshPlaybackConnection();
+        throwIfCancelled(token);
+        const QString uri = artist.uri.isEmpty() ? QStringLiteral("spotify:artist:") + artist.id : artist.uri;
+        const QJsonObject page = QJsonDocument::fromJson((co_await m_session->core()->artistJson(uri)).toUtf8()).object();
+        throwIfCancelled(token);
+        if (!(m_destination == target)) {
+            co_return;
+        }
         QList<Song> topSongs;
-        bool topSongsLoaded = false;
-        try {
-            topSongs = co_await m_session->withLibraryAccessToken<QList<Song>>(
-                [this, artist](QString accessToken) { return m_session->webApi().artistTopTracks(artist, accessToken); });
-            topSongsLoaded = true;
-        } catch (const SpotifyError &error) {
-            qCWarning(lcLibrary).noquote() << "loading top songs for" << artist.name << ':' << error.message();
+        for (const QJsonValue &value : page.value(QStringLiteral("topTracks")).toObject().value(QStringLiteral("items")).toArray()) {
+            if (const auto song = json::wrappedTrack(value.toObject())) {
+                topSongs.append(*song);
+            }
         }
-        throwIfCancelled(token);
-        if (!(m_destination == target)) {
-            co_return;
+        QList<Album> albums;
+        for (const QJsonValue &value : page.value(QStringLiteral("albums")).toArray()) {
+            if (const auto album = json::album(value.toObject())) {
+                albums.append(*album);
+            }
         }
-        if (topSongsLoaded) {
-            m_artistTopSongs->setSongs(topSongs);
-            m_openedArtists.insert(artist.id, {topSongs, m_artistAlbums->items()});
-            co_await loadSavedStatuses(topSongs);
-            throwIfCancelled(token);
+        // an artist reached from a song comes without a picture: theirs, the largest
+        const QJsonArray images = page.value(QStringLiteral("images")).toArray();
+        if (m_destination.artist.artworkUrl.isEmpty() && !images.isEmpty()) {
+            m_destination.artist.artworkUrl = QUrl(images.last().toObject().value(QStringLiteral("url")).toString());
+            emit destinationChanged();
         }
-
-        const QList<Album> albums = co_await m_session->withLibraryAccessToken<QList<Album>>(
-            [this, artist](QString accessToken) { return m_session->webApi().artistAlbums(artist, accessToken); });
-        throwIfCancelled(token);
-        if (!(m_destination == target)) {
-            co_return;
-        }
+        m_artistTopSongs->setSongs(topSongs);
         m_artistAlbums->setItems(albums);
-        m_openedArtists.insert(artist.id, {m_artistTopSongs->songs(), albums});
+        m_openedArtists.insert(artist.id, {topSongs, albums});
         setLoading(m_loadingArtist, false);
+        co_await loadSavedStatuses(topSongs);
     } catch (const Cancelled &) {
     } catch (const SpotifyError &error) {
         if (m_destination == target && !isCancelled(token)) {

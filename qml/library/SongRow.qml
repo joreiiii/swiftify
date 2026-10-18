@@ -30,7 +30,7 @@ T.AbstractButton {
 
     Behavior on scale {
         enabled: !Appearance.performanceMode
-        Bounce {}
+        NumberAnimation { duration: Appearance.duration(140); easing.type: Easing.OutCubic }
     }
     // the row's card starts at the page margin and keeps its content clear
     // of its rounded edge

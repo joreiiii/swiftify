@@ -2,6 +2,7 @@
 #include "app/ErrorCenter.h"
 #include "app/Fonts.h"
 #include "app/Paths.h"
+#include "app/FocusRelease.h"
 #include "app/Settings.h"
 #include "artwork/ArtworkCache.h"
 #include "audio/AudioShaping.h"
@@ -40,6 +41,7 @@
 #include <QIcon>
 #include <QPlatformSurfaceEvent>
 #include <QSet>
+#include <QQuickWindow>
 #include <QStyleHints>
 #include <QWindow>
 #include <QNetworkAccessManager>
@@ -334,6 +336,12 @@ int main(int argc, char *argv[])
     engine.addImageProvider(QStringLiteral("art"), new ArtworkImageProvider);
     QObject::connect(&engine, &QQmlApplicationEngine::objectCreationFailed, &application,
                      [] { QCoreApplication::exit(EXIT_FAILURE); }, Qt::QueuedConnection);
+    // a press outside the field being typed in takes its focus away
+    FocusRelease focusRelease;
+    QObject::connect(&engine, &QQmlApplicationEngine::objectCreated, &focusRelease,
+                     [&focusRelease](QObject *object, const QUrl &) {
+        focusRelease.watch(qobject_cast<QQuickWindow *>(object));
+    });
     engine.loadFromModule("Swiftify", "Main");
     // the first launch carries out its own command too, once the window exists
     if (const QString command = SingleInstance::commandFrom(QCoreApplication::arguments()); command != QLatin1StringView("raise")) {

@@ -40,6 +40,7 @@ ApplicationWindow {
         if (!rightPanelFits) {
             Player.showingLyrics = false
             Player.showingQueue = false
+            Player.showingNowPlaying = false
         }
     }
     onRightPanelFitsChanged: closeCrowdedPanels()
@@ -355,12 +356,12 @@ ApplicationWindow {
             }
         }
 
-        // the inspector: lyrics or the queue beside the page, outside the
+        // the inspector: now playing, lyrics or the queue beside the page, outside the
         // navigation, hidden while the immersive player is open.
         Item {
             id: inspector
             objectName: "mainInspector"
-            readonly property bool shown: (Player.showingLyrics || Player.showingQueue) && !UiState.immersiveOpen
+            readonly property bool shown: (Player.showingLyrics || Player.showingQueue || Player.showingNowPlaying) && !UiState.immersiveOpen
                                           && !UiState.needsSetup && window.rightPanelFits
             anchors.right: parent.right
             anchors.rightMargin: shown ? 8 : 0
@@ -373,10 +374,10 @@ ApplicationWindow {
             // in it went on following the song, unseen
             visible: width > 0.5
 
-            // opens and shuts on a spring, so the page beside it bounces too
+            // opens and shuts on a short ease, the page beside it following
             Behavior on width {
                 enabled: !Appearance.performanceMode && window.rightPanelFits
-                SpringAnimation { spring: 4; damping: 0.32; epsilon: 0.5 }
+                NumberAnimation { duration: Appearance.duration(220); easing.type: Easing.OutCubic }
             }
 
             Rectangle {
@@ -394,6 +395,10 @@ ApplicationWindow {
                 QueuePanel {
                     anchors.fill: parent
                     Reveal.shown: Player.showingQueue
+                }
+                NowPlayingPanel {
+                    anchors.fill: parent
+                    Reveal.shown: Player.showingNowPlaying
                 }
             }
         }

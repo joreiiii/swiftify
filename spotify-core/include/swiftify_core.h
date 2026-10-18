@@ -70,6 +70,10 @@ void swiftify_core_playlist_json(const SwiftifyCore *core, uint64_t request_id,
 /* songs like a track from spotify's radio, shaped like the playlist page:
  * a song radio, or (autoplay) what plays on once the queue runs out.
  * `previous` is a comma-separated list of track uris to leave out. */
+/* an artist's top songs and albums, read through the session: json with
+ * topTracks (shaped like the playlist page) and albums (like the web api's
+ * simplified albums) */
+void swiftify_core_artist_json(const SwiftifyCore *core, uint64_t request_id, const char *artist_uri);
 /* what the people the person follows are listening to: spotify's
  * buddylist, as json */
 void swiftify_core_friends_json(const SwiftifyCore *core, uint64_t request_id);

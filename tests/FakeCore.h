@@ -120,6 +120,7 @@ public:
     }
     QCoro::Task<QString> lyricsJson(QString uri) override { co_return co_await await(QStringLiteral("lyrics"), uri); }
     QCoro::Task<QString> friendsJson() override { co_return co_await await(QStringLiteral("friends"), QString()); }
+    QCoro::Task<QString> artistJson(QString uri) override { co_return co_await await(QStringLiteral("artist"), uri); }
     QCoro::Task<QString> playlistJson(QString uri) override { co_return co_await await(QStringLiteral("playlist"), uri); }
     QCoro::Task<QString> stationJson(QString uri, QStringList, bool autoplay) override
     {

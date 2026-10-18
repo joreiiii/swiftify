@@ -190,6 +190,21 @@ void AppController::minimizeWindow(QObject *target) const
 #endif
 }
 
+bool AppController::share(QObject *target, const QString &title, const QString &url) const
+{
+#ifdef Q_OS_WIN
+    if (auto *window = qobject_cast<QWindow *>(target)) {
+        WindowsIntegration::share(window, title, url);
+        return false;
+    }
+#else
+    Q_UNUSED(target)
+    Q_UNUSED(title)
+#endif
+    copyToClipboard(url);
+    return true;
+}
+
 void AppController::trimMemory()
 {
     m_trim.start();

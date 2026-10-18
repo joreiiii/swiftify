@@ -28,7 +28,7 @@ Item {
         anchors.centerIn: parent
         width: parent.width - 32
         Reveal.shown: !Player.loadingLyrics && !Player.hasLyrics
-        symbol: "mic"
+        symbol: "lyrics"
         title: "Lyrics Unavailable"
         description: Player.lyricsMessage.length > 0 ? Player.lyricsMessage : "i guess bro"
     }

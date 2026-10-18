@@ -437,38 +437,6 @@ Item {
         }
     }
 
-    // a filter chip: a pill that stays lit while it narrows the list
-    component FilterChip: AbstractButton {
-        id: chip
-
-        implicitWidth: label.implicitWidth + 24
-        implicitHeight: 30
-        hoverEnabled: true
-
-        background: Rectangle {
-            radius: height / 2
-            color: chip.checked ? Appearance.colors.primary
-                 : chip.hovered ? Appearance.colors.surfaceContainerHighest : Appearance.colors.surfaceContainerHigh
-
-            Behavior on color {
-                ElementMoveFastColor {}
-            }
-        }
-        contentItem: StyledText {
-            id: label
-            text: chip.text
-            horizontalAlignment: Text.AlignHCenter
-            verticalAlignment: Text.AlignVCenter
-            font.pixelSize: Appearance.fontSize.smaller
-            font.weight: Font.DemiBold
-            color: chip.checked ? Appearance.colors.onPrimary : Appearance.colors.onSurface
-        }
-
-        HoverHandler {
-            cursorShape: Qt.PointingHandCursor
-        }
-    }
-
     MenuLoader {
         id: playlistMenu
         sourceComponent: StyledMenu {

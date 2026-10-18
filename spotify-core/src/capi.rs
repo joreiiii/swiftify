@@ -471,6 +471,12 @@ pub unsafe extern "C" fn swiftify_core_report_playback(
 }
 
 async_call!(
+    /// completes with an artist's top songs and albums, as json.
+    swiftify_core_artist_json(artist_uri) => |core| {
+        core.artist_json(artist_uri).await
+    }
+);
+async_call!(
     /// completes with what the people the person follows listen to, as json.
     swiftify_core_friends_json() => |core| {
         core.friends_json().await

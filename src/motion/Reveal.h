@@ -50,7 +50,7 @@ private:
     bool m_settled = false;
     qreal m_scaleFrom = 0.85;
     int m_duration = 440;
-    qreal m_overshoot = 2.2;
+    qreal m_overshoot = 0;
     QParallelAnimationGroup m_animation;
 };
 

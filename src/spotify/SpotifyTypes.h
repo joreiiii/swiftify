@@ -71,6 +71,8 @@ struct Song {
     Q_PROPERTY(bool isExplicit MEMBER isExplicit FINAL)
     Q_PROPERTY(QString albumId MEMBER albumId FINAL)
     Q_PROPERTY(QString albumUri MEMBER albumUri FINAL)
+    /// the first artist's id, empty for a file of the person's own
+    Q_PROPERTY(QString artistId READ artistId FINAL)
     Q_PROPERTY(bool valid READ isValid FINAL)
     /// a music file of the person's own (LocalLibrary), not a spotify track:
     /// nothing spotify knows can be done with it
@@ -92,6 +94,7 @@ public:
     QString albumUri;
     QList<Artist> artistItems;
 
+    QString artistId() const { return artistItems.isEmpty() ? QString() : artistItems.first().id; }
     bool isValid() const { return !uri.isEmpty(); }
     /// its uri is the file's own url, file:///...
     bool isLocalFile() const { return uri.startsWith(QLatin1StringView("file:")); }

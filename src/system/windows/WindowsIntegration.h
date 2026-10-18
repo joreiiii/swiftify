@@ -24,6 +24,8 @@ public:
     static void setNativeTitleBar(QWindow *window, bool enabled);
     static void toggleMaximized(QWindow *window);
     static void minimize(QWindow *window);
+    /// windows' own share sheet, with a link and its title
+    static void share(QWindow *window, const QString &title, const QString &url);
     void setWindow(QWindow *window);
     bool nativeEventFilter(const QByteArray &eventType, void *message, qintptr *result) override;
     bool eventFilter(QObject *watched, QEvent *event) override;

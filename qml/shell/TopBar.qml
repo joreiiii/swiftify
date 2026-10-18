@@ -73,12 +73,13 @@ Item {
                 size: root.buttonSize
                 iconSize: root.compact ? 19 : 26
                 shape: "circle"
-                symbol: "share"
+                symbol: "ios_share"
                 onClicked: {
-                    App.copyToClipboard(root.playlistLink);
-                    UiState.toastRequested("Playlist link copied");
+                    if (App.share(root.Window.window, Library.selectedPlaylist.name, root.playlistLink)) {
+                        UiState.toastRequested("Playlist link copied");
+                    }
                 }
-                tooltip: "Copy Link"
+                tooltip: "Share"
             }
             ToolbarButton {
                 id: more
@@ -233,9 +234,13 @@ Item {
             StyledMenuItem {
                 visible: !Library.selectedPlaylist.isLocal
                 height: visible ? implicitHeight : 0
-                text: "Open in Spotify"
-                symbol: "open_in_new"
-                onTriggered: App.openUrl(root.playlistLink)
+                text: "Share"
+                symbol: "ios_share"
+                onTriggered: {
+                    if (App.share(root.Window.window, Library.selectedPlaylist.name, root.playlistLink)) {
+                        UiState.toastRequested("Playlist link copied");
+                    }
+                }
             }
             StyledMenuSeparator {
                 visible: Library.selectedPlaylistEditable

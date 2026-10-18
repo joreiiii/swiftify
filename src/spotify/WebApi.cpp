@@ -335,13 +335,18 @@ QCoro::Task<Song> WebApi::song(QString trackId, QString accessToken)
     co_return *song;
 }
 
-QCoro::Task<QList<Song>> WebApi::artistTopTracks(Artist artist, QString accessToken)
+QCoro::Task<QHash<QString, QStringList>> WebApi::artistGenres(QStringList ids, QString accessToken)
 {
-    const QJsonDocument document = co_await requestJson(
-        apiUrl(QStringLiteral("/v1/artists/%1/top-tracks").arg(artist.id)), "GET", accessToken);
-    QList<Song> result;
-    for (const QJsonValue &value : document.object().value(QStringLiteral("tracks")).toArray()) {
-        if (const auto song = json::track(value.toObject())) result.append(*song);
+    QHash<QString, QStringList> result;
+    const QUrlQuery query {{QStringLiteral("ids"), ids.mid(0, 50).join(u',')}};
+    const QJsonDocument document = co_await requestJson(apiUrl(QStringLiteral("/v1/artists"), query), "GET", accessToken);
+    for (const QJsonValue &value : document.object().value(QStringLiteral("artists")).toArray()) {
+        const QJsonObject artist = value.toObject();
+        QStringList genres;
+        for (const QJsonValue &genre : artist.value(QStringLiteral("genres")).toArray()) {
+            genres.append(genre.toString());
+        }
+        result.insert(artist.value(QStringLiteral("id")).toString(), genres);
     }
     co_return result;
 }
@@ -356,40 +361,6 @@ QCoro::Task<QList<Song>> WebApi::albumSongs(Album album, QString accessToken)
             if (const auto song = json::track(value.toObject(), album)) result.append(*song);
         }
     });
-    co_return result;
-}
-
-QCoro::Task<QList<Album>> WebApi::artistAlbums(Artist artist, QString accessToken)
-{
-    QList<Album> result;
-    QSet<QString> seen;
-    const QUrlQuery query {{QStringLiteral("include_groups"), QStringLiteral("album,single")},
-                           {QStringLiteral("limit"), QStringLiteral("10")}};
-    co_await collectPages(apiUrl(QStringLiteral("/v1/artists/%1/albums").arg(artist.id), query), accessToken,
-                          [&result, &seen](const QJsonObject &page) {
-        for (const QJsonValue &value : page.value(QStringLiteral("items")).toArray()) {
-            const auto album = json::album(value.toObject());
-            if (album && !seen.contains(album->id)) {
-                seen.insert(album->id);
-                result.append(*album);
-            }
-        }
-    });
-    co_return result;
-}
-
-QCoro::Task<QList<Album>> WebApi::latestReleases(Artist artist, QString accessToken)
-{
-    QList<Album> result;
-    const QUrlQuery query {{QStringLiteral("include_groups"), QStringLiteral("album,single")},
-                           {QStringLiteral("limit"), QStringLiteral("5")}};
-    const QJsonObject page = co_await requestPage(apiUrl(QStringLiteral("/v1/artists/%1/albums").arg(artist.id), query),
-                                                  accessToken);
-    for (const QJsonValue &value : page.value(QStringLiteral("items")).toArray()) {
-        if (const auto album = json::album(value.toObject())) {
-            result.append(*album);
-        }
-    }
     co_return result;
 }
 

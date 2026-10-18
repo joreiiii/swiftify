@@ -2,10 +2,12 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import Swiftify
 
-// SongOptionsContent: save, go to album or artist, queue, and add to
-// or remove from a playlist. one instance per window, opened at the pointer.
-// a file of the person's own is nothing spotify knows: it queues, shows
-// where it is kept, and goes in playlists made on this computer.
+// SongOptionsContent, laid out as spotify's song menu: add to a playlist,
+// save, queue, remove from the playlist open, the sleep timer, then the
+// song's radio, artist and album, and share. one instance per window,
+// opened at the pointer. a file of the person's own is nothing spotify
+// knows: it queues, shows where it is kept, and goes in playlists made on
+// this computer.
 StyledMenu {
     id: root
 
@@ -20,70 +22,6 @@ StyledMenu {
         allowsPlaylistRemoval = allowsRemoval
         editablePlaylists = target.isLocalFile ? LocalFiles.playlistChoices() : Library.editablePlaylists()
         popup()
-    }
-
-    StyledMenuItem {
-        id: saveItem
-        visible: !root.local
-        height: visible ? implicitHeight : 0
-        text: root.saved ? "Remove from Songs" : "Save to Songs"
-        symbol: root.saved ? "check_circle" : "add_circle"
-        onTriggered: {
-            if (!root.saved) {
-                UiState.burst(saveItem, "hearts")
-            }
-            Library.toggleSaved(root.song)
-        }
-    }
-    StyledMenuItem {
-        visible: root.local
-        height: visible ? implicitHeight : 0
-        text: "Edit Info…"
-        symbol: "edit_note"
-        onTriggered: UiState.editLocalTrackRequested(root.song)
-    }
-    StyledMenuItem {
-        visible: root.local
-        height: visible ? implicitHeight : 0
-        text: App.macOS ? "Show in Finder" : "Show in Folder"
-        symbol: "folder_open"
-        onTriggered: App.openUrl(root.song.uri.substring(0, root.song.uri.lastIndexOf("/")))
-    }
-    StyledMenuSeparator {
-        visible: !root.local
-        height: visible ? implicitHeight : 0
-    }
-    StyledMenuItem {
-        visible: !root.local && root.song.albumName.length > 0
-        height: visible ? implicitHeight : 0
-        text: "Go to Album"
-        symbol: "album"
-        onTriggered: UiState.goToAlbum(root.song)
-    }
-    StyledMenuItem {
-        visible: !root.local && root.song.artists.length > 0
-        height: visible ? implicitHeight : 0
-        text: "Go to Artist"
-        symbol: "person"
-        onTriggered: UiState.goToArtist(root.song)
-    }
-    StyledMenuSeparator {}
-    StyledMenuItem {
-        visible: !root.local
-        height: visible ? implicitHeight : 0
-        text: "Go to Song Radio"
-        symbol: "radio"
-        onTriggered: Library.showRadio(root.song)
-    }
-    StyledMenuItem {
-        text: "Play Next"
-        symbol: "queue_play_next"
-        onTriggered: Player.playNext(root.song)
-    }
-    StyledMenuItem {
-        text: "Play Last"
-        symbol: "playlist_add"
-        onTriggered: Player.playLast(root.song)
     }
 
     StyledMenu {
@@ -122,16 +60,119 @@ StyledMenu {
         }
     }
 
-    StyledMenuSeparator {
-        visible: root.allowsPlaylistRemoval
+    // saved, the check is filled in the theme's green, as spotify's is
+    StyledMenuItem {
+        id: saveItem
+        visible: !root.local
         height: visible ? implicitHeight : 0
+        text: root.saved ? "Remove from Favourite Songs" : "Save to Favourite Songs"
+        symbol: root.saved ? "check_circle" : "add_circle"
+        accent: root.saved
+        onTriggered: {
+            if (!root.saved) {
+                UiState.burst(saveItem, "hearts")
+            }
+            Library.toggleSaved(root.song)
+        }
+    }
+    StyledMenuItem {
+        text: "Add to Queue"
+        symbol: "playlist_add"
+        onTriggered: Player.playLast(root.song)
+    }
+    StyledMenuItem {
+        text: "Play Next"
+        symbol: "queue_play_next"
+        onTriggered: Player.playNext(root.song)
     }
     StyledMenuItem {
         visible: root.allowsPlaylistRemoval
         height: visible ? implicitHeight : 0
-        text: "Remove from Playlist"
-        symbol: "delete"
+        text: "Remove from this Playlist"
+        symbol: "remove_circle_outline"
         destructive: true
         onTriggered: Library.removeFromSelectedPlaylist(root.song)
+    }
+
+    StyledMenu {
+        id: sleepMenu
+        title: "Sleep Timer"
+
+        Repeater {
+            model: [5, 15, 30, 45, 60]
+
+            StyledMenuItem {
+                required property int modelData
+                text: modelData + " minutes"
+                onTriggered: Player.startSleepTimer(modelData * 60, "finalSeconds")
+            }
+        }
+        StyledMenuSeparator {
+            visible: Player.sleepTimerRunning
+            height: visible ? implicitHeight : 0
+        }
+        StyledMenuItem {
+            visible: Player.sleepTimerRunning
+            height: visible ? implicitHeight : 0
+            text: "Turn Off Timer"
+            symbol: "timer_off"
+            onTriggered: Player.cancelSleepTimer()
+        }
+    }
+
+    StyledMenuSeparator {}
+    StyledMenuItem {
+        visible: !root.local
+        height: visible ? implicitHeight : 0
+        text: "Go to Song Radio"
+        symbol: "sensors"
+        onTriggered: Library.showRadio(root.song)
+    }
+    StyledMenuItem {
+        visible: !root.local && root.song.artists.length > 0
+        height: visible ? implicitHeight : 0
+        text: "Go to Artist"
+        symbol: "person"
+        onTriggered: UiState.goToArtist(root.song)
+    }
+    StyledMenuItem {
+        visible: !root.local && root.song.albumName.length > 0
+        height: visible ? implicitHeight : 0
+        text: "Go to Album"
+        symbol: "album"
+        onTriggered: UiState.goToAlbum(root.song)
+    }
+
+    // a file of the person's own: its tags and its folder
+    StyledMenuItem {
+        visible: root.local
+        height: visible ? implicitHeight : 0
+        text: "Edit Info…"
+        symbol: "edit_note"
+        onTriggered: UiState.editLocalTrackRequested(root.song)
+    }
+    StyledMenuItem {
+        visible: root.local
+        height: visible ? implicitHeight : 0
+        text: App.macOS ? "Show in Finder" : "Show in Folder"
+        symbol: "folder_open"
+        onTriggered: App.openUrl(root.song.uri.substring(0, root.song.uri.lastIndexOf("/")))
+    }
+
+    StyledMenuSeparator {
+        visible: !root.local
+        height: visible ? implicitHeight : 0
+    }
+    StyledMenuItem {
+        visible: !root.local
+        height: visible ? implicitHeight : 0
+        text: "Share"
+        symbol: "ios_share"
+        onTriggered: {
+            const link = "https://open.spotify.com/track/" + root.song.uri.split(":").pop()
+            if (App.share(root.Window.window, root.song.name + " – " + root.song.artists, link)) {
+                UiState.toastRequested("Song link copied")
+            }
+        }
     }
 }

@@ -35,7 +35,7 @@ Item {
         anchors.centerIn: parent
         Reveal.shown: !Player.loadingLyrics && !Player.hasLyrics
         scheme: root.scheme
-        symbol: "mic"
+        symbol: "lyrics"
         title: "Lyrics Unavailable"
         description: Player.lyricsMessage.length > 0 ? Player.lyricsMessage : UiState.catchphrase
     }

@@ -1287,6 +1287,7 @@ void PlaybackController::setShowingLyrics(bool showing)
     m_showingLyrics = showing;
     if (showing) {
         m_showingQueue = false;
+        m_showingNowPlaying = false;
     }
     emit panelsChanged();
 }
@@ -1299,6 +1300,20 @@ void PlaybackController::setShowingQueue(bool showing)
     m_showingQueue = showing;
     if (showing) {
         m_showingLyrics = false;
+        m_showingNowPlaying = false;
+    }
+    emit panelsChanged();
+}
+
+void PlaybackController::setShowingNowPlaying(bool showing)
+{
+    if (m_showingNowPlaying == showing) {
+        return;
+    }
+    m_showingNowPlaying = showing;
+    if (showing) {
+        m_showingLyrics = false;
+        m_showingQueue = false;
     }
     emit panelsChanged();
 }
@@ -1311,6 +1326,11 @@ void PlaybackController::toggleLyricsPanel()
 void PlaybackController::toggleQueuePanel()
 {
     setShowingQueue(!m_showingQueue);
+}
+
+void PlaybackController::toggleNowPlayingPanel()
+{
+    setShowingNowPlaying(!m_showingNowPlaying);
 }
 
 // --- sleep timer --------------------------------------------------------------------
@@ -1413,6 +1433,7 @@ void PlaybackController::reset()
     clearLyrics();
     m_showingLyrics = true;
     m_showingQueue = false;
+    m_showingNowPlaying = false;
     emit panelsChanged();
     // the new core starts at its own default volume
     try {

@@ -36,6 +36,8 @@ public:
     virtual QCoro::Task<> playFile(QString path) = 0;
     virtual QCoro::Task<> restartAudioOutput() = 0;
     virtual QCoro::Task<QString> lyricsJson(QString spotifyUri) = 0;
+    /// an artist's top songs and albums, read through the session
+    virtual QCoro::Task<QString> artistJson(QString artistUri) = 0;
     /// what the people the person follows listen to (spotify's buddylist)
     virtual QCoro::Task<QString> friendsJson() = 0;
     /// a playlist's songs read through the session, shaped like the web api's

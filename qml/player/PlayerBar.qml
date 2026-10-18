@@ -153,7 +153,6 @@ Item {
             width: root.tiny ? 30 : 40
             height: width
             z: 2
-            scale: artHover.hovered ? 1.12 : 1
             // a new song's cover pops in with a spring
             transform: Scale {
                 id: pop
@@ -246,12 +245,12 @@ Item {
             visible: root.titleFits
             clip: true
 
-            // the song blurs away behind the seek line's times while the line is
-            // hovered, easing in rather than switching
-            property real blurAmount: root.progressExpanded ? 1 : 0
+            // the song fades back behind the seek line's times while the line
+            // is hovered, so they read; nothing moves or blurs
+            opacity: root.progressExpanded ? 0.12 : 1
 
-            Behavior on blurAmount {
-                NumberAnimation { duration: Appearance.duration(260); easing.type: Easing.OutCubic }
+            Behavior on opacity {
+                NumberAnimation { duration: Appearance.duration(160); easing.type: Easing.OutCubic }
             }
 
             anchors.left: artwork.right
@@ -261,13 +260,6 @@ Item {
             anchors.top: parent.top
             anchors.topMargin: 7
             anchors.bottom: seek.top
-            layer.enabled: blurAmount > 0.001
-            layer.effect: MultiEffect {
-                blurEnabled: true
-                blur: info.blurAmount
-                blurMax: 40
-                saturation: -0.2 * info.blurAmount
-            }
 
             Column {
                 anchors.left: parent.left
@@ -358,18 +350,6 @@ Item {
         SeekBar {
             id: seek
 
-            // hovered, the line springs up out of the bar and bounces back
-            // down when the pointer leaves
-            property real lift: root.progressExpanded ? -5 : 0
-
-            Behavior on lift {
-                enabled: !Appearance.performanceMode
-                Bounce {}
-            }
-
-            transform: Translate {
-                y: seek.lift
-            }
             anchors.left: root.titleFits ? artwork.right : parent.left
             anchors.leftMargin: root.titleFits ? 8 : 0
             anchors.right: parent.right
@@ -380,15 +360,12 @@ Item {
             scheme: root.scheme
         }
 
-        // the times ride up with the seek line
+        // the times show over the song while the seek line is hovered
         Row {
             anchors.left: seek.left
             anchors.right: seek.right
             anchors.bottom: seek.top
-            anchors.bottomMargin: -2
-            transform: Translate {
-                y: seek.lift
-            }
+            anchors.bottomMargin: 3
             opacity: root.progressExpanded ? 1 : 0
             visible: opacity > 0
 
@@ -428,12 +405,36 @@ Item {
         IconButton {
             anchors.verticalCenter: parent.verticalCenter
             scheme: root.scheme
-            symbol: "mic"
+            id: nowPlayingButton
+            size: root.buttonSize
+            iconSize: root.tiny ? 18 : 20
+            toggled: Player.showingNowPlaying
+            tooltip: "Now Playing View"
+            onClicked: Player.toggleNowPlayingPanel()
+
+            NowPlayingGlyph {
+                anchors.centerIn: parent
+                size: nowPlayingButton.iconSize
+                color: nowPlayingButton.iconColor
+                filled: nowPlayingButton.toggled
+            }
+        }
+        IconButton {
+            anchors.verticalCenter: parent.verticalCenter
+            scheme: root.scheme
+            id: lyricsButton
             size: root.buttonSize
             iconSize: root.tiny ? 18 : 20
             toggled: Player.showingLyrics
             tooltip: "Lyrics"
             onClicked: Player.toggleLyricsPanel()
+
+            LyricsGlyph {
+                anchors.centerIn: parent
+                size: lyricsButton.iconSize
+                color: lyricsButton.iconColor
+                filled: lyricsButton.toggled
+            }
         }
         IconButton {
             anchors.verticalCenter: parent.verticalCenter

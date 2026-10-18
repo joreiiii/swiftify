@@ -10,6 +10,7 @@
 #include <QHash>
 #include <QObject>
 #include <QPointer>
+#include <QVariantMap>
 #include <QSet>
 #include <QtQml/qqmlregistration.h>
 
@@ -123,6 +124,9 @@ class LibraryStore : public QObject {
     Q_PROPERTY(bool loadingFriendActivity READ isLoadingFriendActivity NOTIFY loadingChanged FINAL)
     /// why there is no friend activity, when spotify would not send it
     Q_PROPERTY(QString friendActivityMessage READ friendActivityMessage NOTIFY friendActivityChanged FINAL)
+    /// the artist of the song playing, for the now playing view: id, name,
+    /// imageUrl and biography
+    Q_PROPERTY(QVariantMap artistCard READ artistCard NOTIFY artistCardChanged FINAL)
     /// a song radio (Page::Radio): the song it is made from, and its songs
     Q_PROPERTY(swiftify::Song radioSeed READ radioSeed NOTIFY destinationChanged FINAL)
     Q_PROPERTY(swiftify::SongListModel *radioSongs READ radioSongs CONSTANT FINAL)
@@ -210,6 +214,7 @@ public:
     QVariantList friendActivity() const { return m_friendActivity; }
     bool isLoadingFriendActivity() const { return m_loadingFriendActivity; }
     QString friendActivityMessage() const { return m_friendActivityMessage; }
+    QVariantMap artistCard() const { return m_artistCard; }
     SongListModel *radioSongs() const { return m_radioSongs; }
     SongListModel *albumSongs() const { return m_albumSongs; }
     SongListModel *artistTopSongs() const { return m_artistTopSongs; }
@@ -252,6 +257,11 @@ public:
     Q_INVOKABLE void showProfile();
     /// plays a spotify track by its uri, looked up first: a friend's song
     Q_INVOKABLE void playTrackUri(const QString &uri);
+    /// fills artistCard for an artist, once per artist and run
+    Q_INVOKABLE void loadArtistCard(const QString &artistId);
+    /// the genres of each artist by id, asked of spotify once per artist
+    /// per run and remembered (SongFilter's chips)
+    QCoro::Task<QHash<QString, QStringList>> genresOf(QStringList artistIds);
     /// fetches what's new and friend activity afresh, for the top bar's popups
     Q_INVOKABLE void loadNewReleases();
     Q_INVOKABLE void loadFriendActivity();
@@ -309,6 +319,7 @@ signals:
     void savedSongTotalChanged();
     void loadingChanged();
     void friendActivityChanged();
+    void artistCardChanged();
     void newReleasesMessageChanged();
     void playlistSaveFinished(bool ok);
     void playlistDeleted(const QString &id);
@@ -362,6 +373,7 @@ private:
     QCoro::Task<> runNewReleases();
     QCoro::Task<> runFriendActivity();
     QCoro::Task<> runPlayTrackUri(QString uri);
+    QCoro::Task<> runArtistCard(QString artistId);
     QCoro::Task<> runRadioLoad(Song seed, CancelToken token);
     /// a save or removal before the list has loaded
     void adjustSavedSongTotal(int delta);
@@ -409,6 +421,11 @@ private:
     ArtistListModel *m_followedArtists;
     SongListModel *m_radioSongs;
     QPointer<PlaybackController> m_player;
+    QHash<QString, QStringList> m_artistGenres;
+    QVariantMap m_artistCard;
+    QHash<QString, QVariantMap> m_artistCards;
+    /// spotify gave no genres, or would not: not asked again this run
+    bool m_genresUnavailable = false;
     AlbumListModel *m_newReleases;
     bool m_loadingNewReleases = false;
     QString m_newReleasesMessage;

@@ -11,6 +11,8 @@ T.MenuItem {
     /// a tick while checked, without the item toggling itself: for a choice
     /// the owner keeps, so the tick always follows the owner's binding
     property bool checkmark: false
+    /// its symbol filled in the primary colour: a song already saved
+    property bool accent: false
     readonly property MaterialScheme scheme: (root.menu as StyledMenu)?.scheme ?? Appearance.colors
     readonly property color foreground: destructive ? scheme.error : scheme.onSurface
 
@@ -36,7 +38,8 @@ T.MenuItem {
             visible: root.symbol.length > 0 || root.checkable || root.checkmark
             text: root.checkable || root.checkmark ? (root.checked ? "check" : "") : root.symbol
             iconSize: 20
-            color: root.destructive ? root.foreground : root.scheme.onSurfaceVariant
+            fill: root.accent ? 1 : 0
+            color: root.destructive ? root.foreground : root.accent ? root.scheme.primary : root.scheme.onSurfaceVariant
         }
 
         StyledText {

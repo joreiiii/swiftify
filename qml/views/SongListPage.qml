@@ -24,10 +24,19 @@ ListView {
     property string emptyDescription
     property bool allowsPlaylistRemoval: false
     property bool reorderable: false
+    /// filter chips over the songs, as spotify's playlists have
+    property bool filterable: true
+    /// the songs shown: all of them, or the chip picked's
+    readonly property SongListModel shownSongs: filterable ? filter.songs : songs
 
     readonly property real margin: Appearance.sizes.pageMargin
 
-    model: loading ? null : songs
+    SongFilter {
+        id: filter
+        source: root.filterable ? root.songs : null
+    }
+
+    model: loading ? null : shownSongs
     boundsBehavior: Flickable.StopAtBounds
     reuseItems: true
     cacheBuffer: 600
@@ -43,6 +52,34 @@ ListView {
         Loader {
             width: root.width
             sourceComponent: root.hero
+        }
+
+        // the filter chips, scrolling sideways when there are more than fit
+        Flickable {
+            x: root.margin
+            width: root.width - 2 * root.margin
+            height: visible ? 46 : 0
+            visible: root.filterable && filter.chips.length > 0 && !root.loading
+            contentWidth: chipRow.width
+            flickableDirection: Flickable.HorizontalFlick
+            boundsBehavior: Flickable.StopAtBounds
+            clip: true
+
+            Row {
+                id: chipRow
+                spacing: 8
+
+                Repeater {
+                    model: filter.chips
+
+                    FilterChip {
+                        required property string modelData
+                        text: modelData
+                        checked: filter.active === modelData
+                        onClicked: filter.active = modelData
+                    }
+                }
+            }
         }
 
         Rectangle {
@@ -89,13 +126,14 @@ ListView {
 
         x: root.margin
         width: root.width - 2 * root.margin
-        songs: root.songs
+        songs: root.shownSongs
         allowsPlaylistRemoval: root.allowsPlaylistRemoval
 
         // reordering: hold and drag a row; a line shows where it will land
         DragHandler {
             id: drag
-            enabled: root.reorderable
+            // a filtered list has gaps: its rows cannot be put in order
+            enabled: root.reorderable && filter.active.length === 0
             target: null
             yAxis.enabled: true
             xAxis.enabled: false

@@ -57,7 +57,7 @@ Flickable {
             spacing: 6
 
             TitleText {
-                text: "Swiftify"
+                text: Library.profileName.length > 0 ? "Hey, " + Library.profileName + "!" : "Hey!"
                 font.pixelSize: Appearance.fontSize.display
                 font.weight: Font.Bold
                 font.letterSpacing: -0.8
@@ -175,19 +175,6 @@ Flickable {
                 opacity: Appearance.colors.dark ? 0.42 : 0.3
             }
 
-            // a wave along the bottom, flowing only while this plays
-            WavyLine {
-                anchors.left: parent.left
-                anchors.leftMargin: spotlight.stacked ? spotlight.inset : spotlightDetails.x
-                anchors.right: parent.right
-                anchors.rightMargin: 26
-                anchors.bottom: parent.bottom
-                anchors.bottomMargin: 12
-                height: 10
-                color: Qt.alpha(Appearance.colors.primary, 0.45)
-                phaseRate: root.spotlightIsCurrent ? 4 : 0
-            }
-
             Item {
                 id: spotlightArt
                 x: spotlight.inset
@@ -269,39 +256,14 @@ Flickable {
                     topPadding: 6
                     spacing: 12
 
-                    // the play button, as in the player, with what it does beside it
+                    // the play button, as in the player, and the song's menu
                     PlayButton {
                         anchors.verticalCenter: parent.verticalCenter
                         implicitWidth: resume.width < 160 ? 36 : 52
                         implicitHeight: implicitWidth
                         playing: root.spotlightIsCurrent && Player.playing
-                        tooltip: resumeLabel.visible ? "" : resumeLabel.text
+                        tooltip: root.spotlightIsCurrent ? (Player.playing ? "Pause" : "Resume") : "Play"
                         onClicked: resume.play()
-                    }
-                    // as wide as its longest word, so the button beside it
-                    // stays put whichever it says
-                    StyledText {
-                        id: resumeLabel
-                        visible: resume.width >= 176
-                        anchors.verticalCenter: parent.verticalCenter
-                        width: Math.ceil(Math.max(labelMetrics.advanceWidth("Pause"), labelMetrics.advanceWidth("Resume"),
-                                                  labelMetrics.advanceWidth("Play")))
-                        text: root.spotlightIsCurrent ? (Player.playing ? "Pause" : "Resume") : "Play"
-                        font.pixelSize: Appearance.fontSize.normal
-                        font.weight: Font.DemiBold
-                        animateChange: true
-
-                        FontMetrics {
-                            id: labelMetrics
-                            font: resumeLabel.font
-                        }
-
-                        TapHandler {
-                            onTapped: resume.play()
-                        }
-                        HoverHandler {
-                            cursorShape: Qt.PointingHandCursor
-                        }
                     }
                     IconButton {
                         anchors.verticalCenter: parent.verticalCenter

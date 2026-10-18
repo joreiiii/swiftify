@@ -215,6 +215,12 @@ QCoro::Task<QString> RustCore::lyricsJson(QString spotifyUri)
     co_return co_await request([&](quint64 id) { swiftify_core_lyrics_json(m_core, id, uri.constData()); });
 }
 
+QCoro::Task<QString> RustCore::artistJson(QString artistUri)
+{
+    const QByteArray uri = artistUri.toUtf8();
+    co_return co_await request([&](quint64 id) { swiftify_core_artist_json(m_core, id, uri.constData()); });
+}
+
 QCoro::Task<QString> RustCore::friendsJson()
 {
     co_return co_await request([&](quint64 id) { swiftify_core_friends_json(m_core, id); });
