@@ -31,6 +31,8 @@ ApplicationWindow {
     function focusSearch() {
         if (Library.page === Library.Page.Playlist && Library.selectedPlaylist.valid) {
             topBar.focusSearch()
+        } else if (Settings.centeredSearch) {
+            globalBar.focusSearch()
         } else {
             sidebar.focusSearch()
         }
@@ -48,7 +50,7 @@ ApplicationWindow {
         target: Player
         function onPanelsChanged() { window.closeCrowdedPanels() }
     }
-    title: "Swiftify"
+    title: "Spotify"
     // on linux the app draws its whole frame. on macos the content runs under
     // a transparent title bar that keeps the traffic lights and nothing else.
     flags: App.macOS ? Qt.Window | Qt.ExpandedClientAreaHint | Qt.NoTitleBarBackgroundHint
@@ -149,17 +151,12 @@ ApplicationWindow {
             editor.openFor(song)
         }
         function onSettingsRequested() {
-            // the settings show over this window: it comes back first, from
-            // the tray
+            // the settings are a page of the window: it comes back first,
+            // from the tray
             if (!window.visible) {
                 window.reveal()
             }
-            const open = settings.item as SettingsDialog
-            if (open) {
-                open.open()
-            } else {
-                settings.active = true
-            }
+            Library.showSettings()
         }
         function onEditPlaylistRequested() {
             playlistEditor.active = true
@@ -256,6 +253,8 @@ ApplicationWindow {
             anchors.top: parent.top
             anchors.topMargin: App.macOS ? window.titleBarInset - 28 : 0
             height: 56
+            // over the sidebar and pages, for its recent searches
+            z: 2
             window: window
             showWindowControls: window.inAppWindowControls
         }
@@ -350,7 +349,8 @@ ApplicationWindow {
                 anchors.horizontalCenter: parent.horizontalCenter
                 anchors.bottom: parent.bottom
                 anchors.bottomMargin: 12
-                width: Math.max(0, Math.min(720, sheet.width - 36))
+                // as wide as the sheet, with the same 12 at the sides as below
+                width: Math.max(0, sheet.width - 24)
                 Reveal.shown: !UiState.needsSetup
                 onImmersiveRequested: UiState.immersiveOpen = true
             }
@@ -361,7 +361,9 @@ ApplicationWindow {
         Item {
             id: inspector
             objectName: "mainInspector"
-            readonly property bool shown: (Player.showingLyrics || Player.showingQueue || Player.showingNowPlaying) && !UiState.immersiveOpen
+            readonly property bool shown: ((Player.showingLyrics && UiState.lyricsAvailable)
+                                           || (Player.showingQueue && UiState.queueAvailable)
+                                           || (Player.showingNowPlaying && UiState.nowPlayingAvailable)) && !UiState.immersiveOpen
                                           && !UiState.needsSetup && window.rightPanelFits
             anchors.right: parent.right
             anchors.rightMargin: shown ? 8 : 0
@@ -389,25 +391,26 @@ ApplicationWindow {
                 LyricsPanel {
                     objectName: "mainLyricsPanel"
                     anchors.fill: parent
-                    Reveal.shown: Player.showingLyrics
+                    Reveal.shown: Player.showingLyrics && UiState.lyricsAvailable
                     suspended: UiState.immersiveOpen
                 }
                 QueuePanel {
                     anchors.fill: parent
-                    Reveal.shown: Player.showingQueue
+                    Reveal.shown: Player.showingQueue && UiState.queueAvailable
                 }
                 NowPlayingPanel {
                     anchors.fill: parent
-                    Reveal.shown: Player.showingNowPlaying
+                    Reveal.shown: Player.showingNowPlaying && UiState.nowPlayingAvailable
                 }
             }
         }
 
-        // music files and folders dropped onto the window go into Local Files
+        // music files dropped onto the window went into Local Files, which
+        // are gone: the window takes no drops
         DropArea {
             id: musicDrop
             anchors.fill: parent
-            enabled: Session.libraryConnected
+            enabled: false
             onEntered: (drag) => drag.accepted = drag.hasUrls
             onDropped: (drop) => {
                 if (!drop.hasUrls) {
@@ -471,17 +474,30 @@ ApplicationWindow {
     Loader {
         id: startup
         property bool fading: false
+        /// past this, the window shows whatever has loaded rather than wait on
+        property bool gaveUp: false
+        /// the login is checked, then the library loaded: until both are done
+        /// the window shows this, and then everything at once
+        readonly property bool waiting: Session.evaluatingStoredLogin
+                                        || (!UiState.needsSetup && !Library.libraryReady && !gaveUp)
         anchors.fill: parent
-        active: Session.evaluatingStoredLogin || fading
+        active: waiting || fading
         sourceComponent: StartupView {
-            Reveal.shown: Session.evaluatingStoredLogin
+            Reveal.shown: startup.waiting
+            message: Session.evaluatingStoredLogin ? "Checking your saved Spotify login…" : "Loading your library…"
             // held from when it is built until it has faded away
             Component.onCompleted: startup.fading = true
             onVisibleChanged: {
                 if (!visible) {
-                    Qt.callLater(() => startup.fading = Session.evaluatingStoredLogin)
+                    Qt.callLater(() => startup.fading = startup.waiting)
                 }
             }
+        }
+
+        Timer {
+            interval: 15000
+            running: startup.waiting
+            onTriggered: startup.gaveUp = true
         }
     }
 
@@ -737,29 +753,6 @@ ApplicationWindow {
         }
     }
 
-    // the settings, a sheet over the window, built only while open, and
-    // between frames: all at once it held up the window for half a second
-    Loader {
-        id: settings
-        active: false
-        asynchronous: true
-        // opened once it is in the window, which it is not yet when built
-        onLoaded: {
-            const dialog = item as SettingsDialog
-            dialog.open()
-        }
-        sourceComponent: SettingsDialog {
-            // let go once it has gone, unless it was asked for again on the way
-            onClosed: Qt.callLater(() => {
-                const dialog = settings.item as SettingsDialog
-                if (dialog && !dialog.visible) {
-                    settings.active = false
-                    App.trimMemory()
-                }
-            })
-        }
-    }
-
     // the squiggles and shapes that turn do so while music plays somewhere seen
     Binding {
         target: UiState
@@ -778,12 +771,24 @@ ApplicationWindow {
     // built only where something shows tray icons, since qt complains loudly
     // about a tray with nowhere to go
     Loader {
-        active: App.trayAvailable && (Settings.trayIcon || (App.windows && !window.visible))
+        active: App.trayAvailable && (Settings.trayIcon || Settings.trackNotifications || (App.windows && !window.visible))
         sourceComponent: Platform.SystemTrayIcon {
+            id: tray
             objectName: "swiftifyTrayIcon"
             visible: true
             icon.source: "qrc:/qt/qml/Swiftify/resources/swiftify-icon.png"
-            tooltip: Player.hasSong ? Player.currentSong.name + " — " + Player.currentSong.artists : "Swiftify"
+            tooltip: Player.hasSong ? Player.currentSong.name + " — " + Player.currentSong.artists : "Spotify"
+
+            // spotify's desktop notification when the song changes, while
+            // the window is not in front
+            readonly property Connections songNotes: Connections {
+                target: Player
+                function onCurrentSongChanged() {
+                    if (Settings.trackNotifications && Player.hasSong && !window.active) {
+                        tray.showMessage(Player.currentSong.name, Player.currentSong.artists)
+                    }
+                }
+            }
             onActivated: (reason) => {
                 if (reason === Platform.SystemTrayIcon.Trigger || reason === Platform.SystemTrayIcon.DoubleClick) {
                     window.reveal()
@@ -792,7 +797,7 @@ ApplicationWindow {
 
             menu: Platform.Menu {
                 Platform.MenuItem {
-                    text: "Show Swiftify"
+                    text: "Show Spotify"
                     onTriggered: window.reveal()
                 }
                 Platform.MenuItem {
@@ -802,7 +807,7 @@ ApplicationWindow {
                 }
                 Platform.MenuSeparator {}
                 Platform.MenuItem {
-                    text: "Quit Swiftify"
+                    text: "Quit Spotify"
                     onTriggered: App.quit()
                 }
             }
@@ -888,15 +893,7 @@ ApplicationWindow {
         sourceComponent: MacMenuBar {
             window: window
             onFindRequested: window.focusSearch()
-            // the settings first, if they are open over the window
-            onCloseWindowRequested: {
-                const open = settings.item as SettingsDialog
-                if (open && open.opened) {
-                    open.close()
-                } else {
-                    window.close()
-                }
-            }
+            onCloseWindowRequested: window.close()
             onMinimizeRequested: App.minimizeWindow(window)
             onZoomRequested: App.toggleMaximized(window)
             onShowWindowRequested: window.reveal()

@@ -22,9 +22,7 @@ StyledDialog {
     headline: "Waiting for your browser…"
 symbol: "key"
 iconShape: "clover4"
-    body: Session.loginIsForLibrary
-        ? "Sign in to Spotify in the browser window that just opened to connect your library."
-        : "Sign in to Spotify in the browser window that just opened to connect playback."
+    body: "Sign in to Spotify in the browser window that just opened."
     onRejected: Session.cancelLogin()
 
     buttons: [

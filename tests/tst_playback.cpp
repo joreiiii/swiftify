@@ -398,7 +398,7 @@ private slots:
         rig.player.play(queue[0], queue);
         rig.settle();
         QVERIFY(!rig.player.hasLyrics());
-        QCOMPARE(rig.player.lyricsMessage(), QStringLiteral("i mean i guess bro"));
+        QCOMPARE(rig.player.lyricsMessage(), QStringLiteral("This song has no lyrics on Spotify."));
     }
 
     void aScrubOnlyCommitsForTheSameSong()

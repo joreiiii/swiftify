@@ -1,5 +1,6 @@
 pragma ComponentBehavior: Bound
 import QtQuick
+import QtQuick.Effects
 import Swiftify
 
 // the head of a playlist, album, artist or favourites page: glowing artwork
@@ -9,6 +10,8 @@ Item {
     id: root
 
     property url artworkUrl
+    /// the artwork's address is still on its way
+    property bool artworkPending: false
     property bool circular: false
     property string kind
     property string title
@@ -24,6 +27,70 @@ Item {
 
     implicitHeight: stacked ? artworkSize + details.implicitHeight + 100
                             : Math.max(artworkSize, details.implicitHeight) + 80
+
+    /// a picture behind the whole head, blurred and fading out downwards, as
+    /// spotify's artist pages have the artist's
+    property url backdropUrl
+    /// how far above the head the backdrop reaches, up to the page's top
+    /// edge over the gap a page leaves above its content
+    property real backdropBleed: 0
+
+    Item {
+        id: backdrop
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.topMargin: -root.backdropBleed
+        height: parent.height + 60 + root.backdropBleed
+        visible: root.backdropUrl.toString().length > 0
+
+        Item {
+            id: backdropSource
+            anchors.fill: parent
+            visible: false
+            layer.enabled: true
+            layer.textureSize: Qt.size(Math.ceil(width / 3), Math.ceil(height / 3))
+
+            Image {
+                readonly property string picture: root.backdropUrl.toString()
+                anchors.fill: parent
+                asynchronous: true
+                fillMode: Image.PreserveAspectCrop
+                sourceSize: Qt.size(96, 96)
+                source: picture.length > 0 ? "image://art/" + encodeURIComponent(picture) : ""
+            }
+        }
+        // the page's own rounded top, so nothing shows past its corners
+        Rectangle {
+            id: backdropMask
+            anchors.fill: parent
+            visible: false
+            layer.enabled: true
+            topLeftRadius: Appearance.rounding.large
+            topRightRadius: Appearance.rounding.large
+            color: "white"
+        }
+        MultiEffect {
+            id: backdropBlur
+            anchors.fill: parent
+            visible: false
+            layer.enabled: true
+            source: backdropSource
+            blurEnabled: true
+            blur: 1
+            blurMax: 64
+            autoPaddingEnabled: false
+            saturation: 0.1
+        }
+        ShaderEffect {
+            anchors.fill: parent
+            property var source: backdropBlur
+            property var mask: backdropMask
+            property real shift: 0
+            fragmentShader: "qrc:/shaders/scroll_wash.frag.qsb"
+            opacity: Appearance.colors.dark ? 0.55 : 0.4
+        }
+    }
 
     // the collection's own scatter of faint shapes, behind it all
     Stickers {
@@ -75,6 +142,7 @@ Item {
         ArtworkImage {
             id: cover
             anchors.fill: parent
+            pending: root.artworkPending
             visible: artworkSlot.children.length === 0
             opacity: artworkBox.awaitingFlight ? 0 : 1
             source: root.artworkUrl
@@ -92,8 +160,9 @@ Item {
         id: details
         objectName: "heroDetails"
         x: root.stacked ? Appearance.sizes.pageMargin : artworkBox.x + artworkBox.width + 24
+        // beside the cover, centred on it, as spotify's page heads are
         y: root.stacked ? artworkBox.y + artworkBox.height + 20
-                        : 40 + Math.max(0, artworkBox.height - implicitHeight)
+                        : 40 + Math.max(0, (artworkBox.height - implicitHeight) / 2)
         width: Math.max(0, root.width - x - Appearance.sizes.pageMargin)
         spacing: 9
 
@@ -163,7 +232,13 @@ Item {
                     required property string modelData
 
                     visible: modelData.length > 0
+                    // a fact still to come keeps its row, and fades in
+                    opacity: modelData.trim().length > 0 ? 1 : 0
                     width: Math.min(parent.width, factText.implicitWidth + 18)
+
+                    Behavior on opacity {
+                        NumberAnimation { duration: Appearance.duration(220); easing.type: Easing.OutCubic }
+                    }
                     height: 24
                     radius: height / 2
                     color: Appearance.colors.surfaceContainerHigh

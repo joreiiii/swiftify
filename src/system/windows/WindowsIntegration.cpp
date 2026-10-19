@@ -25,7 +25,6 @@
 #include <wrl/client.h>
 #include <wrl/event.h>
 #include <wrl/wrappers/corewrappers.h>
-#include <windows.applicationmodel.datatransfer.h>
 #include <windows.media.h>
 #include <systemmediatransportcontrolsinterop.h>
 
@@ -309,68 +308,6 @@ void WindowsIntegration::toggleMaximized(QWindow *window)
     ShowWindow(handle, IsZoomed(handle) ? SW_RESTORE : SW_MAXIMIZE);
 }
 
-void WindowsIntegration::share(QWindow *window, const QString &title, const QString &url)
-{
-    if (!window) return;
-    using namespace ABI::Windows::ApplicationModel::DataTransfer;
-    using namespace ABI::Windows::Foundation;
-    using Microsoft::WRL::Callback;
-    using Microsoft::WRL::ComPtr;
-    using Microsoft::WRL::Wrappers::HString;
-    using Microsoft::WRL::Wrappers::HStringReference;
-
-    const HWND handle = reinterpret_cast<HWND>(window->winId());
-    ComPtr<IDataTransferManagerInterop> interop;
-    HStringReference managerClass(RuntimeClass_Windows_ApplicationModel_DataTransfer_DataTransferManager);
-    if (FAILED(RoGetActivationFactory(managerClass.Get(), IID_PPV_ARGS(&interop))) || !interop) return;
-    ComPtr<IDataTransferManager> manager;
-    if (FAILED(interop->GetForWindow(handle, IID_PPV_ARGS(&manager))) || !manager) return;
-
-    // one share at a time: the last one's handler goes before this one's
-    static ComPtr<IDataTransferManager> s_manager;
-    static EventRegistrationToken s_token {};
-    if (s_manager && s_token.value) {
-        s_manager->remove_DataRequested(s_token);
-    }
-    s_manager = manager;
-    s_token = {};
-
-    const std::wstring wideTitle = title.toStdWString();
-    const std::wstring wideUrl = url.toStdWString();
-    manager->add_DataRequested(
-        Callback<ITypedEventHandler<DataTransferManager *, DataRequestedEventArgs *>>(
-            [wideTitle, wideUrl](IDataTransferManager *, IDataRequestedEventArgs *args) -> HRESULT {
-                ComPtr<IDataRequest> request;
-                ComPtr<IDataPackage> package;
-                if (FAILED(args->get_Request(&request)) || FAILED(request->get_Data(&package))) return S_OK;
-                ComPtr<IDataPackagePropertySet> properties;
-                if (SUCCEEDED(package->get_Properties(&properties))) {
-                    HString name;
-                    name.Set(wideTitle.c_str(), UINT32(wideTitle.size()));
-                    properties->put_Title(name.Get());
-                }
-                // the link, for apps that take one, and as text for the rest
-                ComPtr<IUriRuntimeClassFactory> uriFactory;
-                HStringReference uriClass(RuntimeClass_Windows_Foundation_Uri);
-                ComPtr<IDataPackage2> package2;
-                if (SUCCEEDED(RoGetActivationFactory(uriClass.Get(), IID_PPV_ARGS(&uriFactory))) && uriFactory
-                    && SUCCEEDED(package.As(&package2))) {
-                    HString link;
-                    link.Set(wideUrl.c_str(), UINT32(wideUrl.size()));
-                    ComPtr<IUriRuntimeClass> uri;
-                    if (SUCCEEDED(uriFactory->CreateUri(link.Get(), &uri)) && uri) {
-                        package2->SetWebLink(uri.Get());
-                    }
-                }
-                HString text;
-                text.Set(wideUrl.c_str(), UINT32(wideUrl.size()));
-                package->SetText(text.Get());
-                return S_OK;
-            }).Get(),
-        &s_token);
-    interop->ShowShareUIForWindow(handle);
-}
-
 void WindowsIntegration::minimize(QWindow *window)
 {
     if (!window) return;
@@ -430,9 +367,6 @@ WindowsIntegration::WindowsIntegration(PlaybackController *player, Theme *theme,
     connect(m_player, &PlaybackController::currentSongChanged, this, &WindowsIntegration::updateMediaMetadata);
     connect(m_player, &PlaybackController::mediaStateChanged, this, &WindowsIntegration::updateMediaControls);
     connect(m_player, &PlaybackController::mediaStateChanged, this, &WindowsIntegration::updateMediaMetadata);
-    connect(m_player, &PlaybackController::loadingChanged, this, &WindowsIntegration::updateProgress);
-    connect(m_player, &PlaybackController::livePositionChanged, this, &WindowsIntegration::updateProgress);
-    connect(m_player, &PlaybackController::durationChanged, this, &WindowsIntegration::updateProgress);
 }
 
 WindowsIntegration::~WindowsIntegration()
@@ -589,19 +523,9 @@ void WindowsIntegration::updateButtons()
 
 void WindowsIntegration::updateProgress()
 {
+    // no progress bar under the taskbar icon: the player shows the position
     if (!m_window || !m_native || !m_native->taskbar || !m_window->isVisible()) return;
-    const HWND handle = reinterpret_cast<HWND>(m_window->winId());
-    if (!m_player->hasSong()) {
-        m_native->taskbar->SetProgressState(handle, TBPF_NOPROGRESS);
-    } else if (m_player->isLoading()) {
-        m_native->taskbar->SetProgressState(handle, TBPF_INDETERMINATE);
-    } else if (m_player->durationMs() > 0) {
-        m_native->taskbar->SetProgressState(handle, m_player->isPlaying() ? TBPF_NORMAL : TBPF_PAUSED);
-        m_native->taskbar->SetProgressValue(handle,
-            std::min<quint64>(m_player->livePositionMs(), m_player->durationMs()), m_player->durationMs());
-    } else {
-        m_native->taskbar->SetProgressState(handle, TBPF_NOPROGRESS);
-    }
+    m_native->taskbar->SetProgressState(reinterpret_cast<HWND>(m_window->winId()), TBPF_NOPROGRESS);
 }
 
 bool WindowsIntegration::nativeEventFilter(const QByteArray &eventType, void *message, qintptr *result)

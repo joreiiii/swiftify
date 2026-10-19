@@ -2771,10 +2771,12 @@ dependencies = [
 name = "spotify-core"
 version = "0.1.8"
 dependencies = [
+ "bytes",
  "env_logger",
  "futures-util",
  "hound",
  "http",
+ "http-body-util",
  "librespot",
  "lofty",
  "protobuf",

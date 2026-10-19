@@ -24,6 +24,8 @@ Item {
     property int revealDuration: 0
     property double sourceChangedAt: 0
     property string placeholderSymbol: "music_note"
+    /// the cover's address is still being asked for: no placeholder yet
+    property bool pending: false
     /// a cover is shared with everything else showing it at the same size,
     /// and its decoded pixels are let go of once it is on the gpu
     /// (QSG_TRANSIENT_IMAGES). another window cannot draw from what is gone,
@@ -149,14 +151,23 @@ Item {
             id: placeholder
             anchors.fill: parent
             radius: root.effectiveRadius
+            /// nothing to show, rather than something still on its way: only
+            /// then the placeholder's colours and symbol, so a cover that is
+            /// loading never flashes them first
+            readonly property bool missing: (root.source.toString().length === 0 && !root.pending) || front.status === Image.Error
             visible: (!root.ready || frontLayer.opacity < 1) && !backLayer.visible
-            gradient: Gradient {
+            color: Appearance.colors.surfaceContainerHigh
+            gradient: missing ? fallbackGradient : null
+
+            Gradient {
+                id: fallbackGradient
                 GradientStop { position: 0; color: Appearance.colors.primaryContainer }
                 GradientStop { position: 1; color: Appearance.colors.tertiaryContainer }
             }
 
             MaterialSymbol {
                 anchors.centerIn: parent
+                visible: placeholder.missing
                 text: root.placeholderSymbol
                 iconSize: Math.max(12, Math.min(parent.width, parent.height) * 0.38)
                 color: Appearance.colors.onPrimaryContainer

@@ -1,7 +1,7 @@
 #include "library/SongFilter.h"
 
 #include "core/Async.h"
-#include "library/LibraryStore.h"
+#include "library/GenreLookup.h"
 #include "library/SongListModel.h"
 
 #include <QPointer>
@@ -14,8 +14,9 @@ namespace swiftify {
 namespace {
 
 /// chips of each kind shown, at most
-constexpr int kGenreChips = 8;
-constexpr int kArtistChips = 8;
+constexpr int kGenreChips = 12;
+/// the artists most heard whose genres are looked up
+constexpr int kLookedUp = 40;
 
 /// the keys of `counts`, most counted first, of at least `least` and fewer
 /// than `most`: a chip every song has filters nothing
@@ -55,7 +56,7 @@ SongFilter::SongFilter(QObject *parent)
 {
     // a list loads in steps: the chips are worked out once it settles
     m_settle.setSingleShot(true);
-    m_settle.setInterval(250);
+    m_settle.setInterval(60);
     connect(&m_settle, &QTimer::timeout, this, &SongFilter::rebuildChips);
 }
 
@@ -100,9 +101,6 @@ void SongFilter::sourceSongsChanged()
 bool SongFilter::matches(const Song &song) const
 {
     for (const Artist &artist : song.artistItems) {
-        if (artist.name == m_active) {
-            return true;
-        }
         for (const QString &genre : m_genres.value(artist.id)) {
             if (titled(genre) == m_active) {
                 return true;
@@ -131,35 +129,33 @@ void SongFilter::apply()
 void SongFilter::rebuildChips()
 {
     const QList<Song> all = m_source ? m_source->songs() : QList<Song> {};
-    QStringList ids;
+    // the artists, most heard first: their genres are looked up in that order
+    QHash<QString, int> heard;
+    QHash<QString, Artist> byId;
     for (const Song &song : all) {
         for (const Artist &artist : song.artistItems) {
-            if (!artist.id.isEmpty() && !ids.contains(artist.id)) {
-                ids.append(artist.id);
+            if (!artist.id.isEmpty()) {
+                heard[artist.id] += 1;
+                byId.insert(artist.id, artist);
             }
         }
     }
-    detach(runChips(++m_generation, all, ids));
+    QList<Artist> artists = byId.values();
+    std::stable_sort(artists.begin(), artists.end(),
+                     [&heard](const Artist &a, const Artist &b) { return heard.value(a.id) > heard.value(b.id); });
+    // the chips show at once with what is known; genres join as they come
+    const quint64 generation = ++m_generation;
+    showChips(all);
+    detach(runChips(generation, all, artists.mid(0, kLookedUp)));
 }
 
-QCoro::Task<> SongFilter::runChips(quint64 generation, QList<Song> all, QStringList ids)
+void SongFilter::showChips(const QList<Song> &all)
 {
-    QPointer<SongFilter> self(this);
-    QHash<QString, QStringList> genres;
-    if (LibraryStore *library = LibraryStore::instance(); library && !ids.isEmpty()) {
-        genres = co_await library->genresOf(ids);
-    }
-    // gone, or a newer list came while spotify answered
-    if (!self || generation != m_generation) {
-        co_return;
-    }
     QHash<QString, int> genreCounts;
-    QHash<QString, int> artistCounts;
     for (const Song &song : all) {
         QSet<QString> songGenres;
         for (const Artist &artist : song.artistItems) {
-            artistCounts[artist.name] += 1;
-            for (const QString &genre : genres.value(artist.id)) {
+            for (const QString &genre : m_genres.value(artist.id)) {
                 songGenres.insert(titled(genre));
             }
         }
@@ -168,9 +164,7 @@ QCoro::Task<> SongFilter::runChips(quint64 generation, QList<Song> all, QStringL
         }
     }
     const int total = int(all.size());
-    QStringList chips = ranked(genreCounts, std::max(2, total / 50), total, kGenreChips);
-    chips += ranked(artistCounts, 2, total, kArtistChips);
-    m_genres = genres;
+    const QStringList chips = ranked(genreCounts, std::max(2, total / 50), total, kGenreChips);
     if (chips != m_chips) {
         m_chips = chips;
         emit chipsChanged();
@@ -180,6 +174,28 @@ QCoro::Task<> SongFilter::runChips(quint64 generation, QList<Song> all, QStringL
         emit activeChanged();
     }
     apply();
+}
+
+QCoro::Task<> SongFilter::runChips(quint64 generation, QList<Song> all, QList<Artist> artists)
+{
+    QPointer<SongFilter> self(this);
+    GenreLookup *lookup = GenreLookup::instance();
+    int fresh = 0;
+    for (const Artist &artist : artists) {
+        const bool asked = !lookup->knows(artist.id);
+        const QStringList genres = co_await lookup->genresOf(artist);
+        // gone, or a newer list came while MusicBrainz answered
+        if (!self || generation != m_generation) {
+            co_return;
+        }
+        m_genres.insert(artist.id, genres);
+        // the row is brought up to date every few artists looked up, not
+        // with every one, and at once for what was known already
+        if (asked && ++fresh % 8 == 0) {
+            showChips(all);
+        }
+    }
+    showChips(all);
 }
 
 } // namespace swiftify

@@ -3,10 +3,9 @@ import QtQuick
 import Swiftify
 
 // the immersive player (FullscreenPlayerView): the cover's colours poured over
-// the window, what is playing, one of lyrics, the queue, the sleep timer or
-// Sound beside it, and the spectrum along the bottom. it is always dark, and
-// while it is open the keys drive playback: space, ←/→ to seek, ↑/↓ for the
-// volume, and Esc to leave.
+// the window, what is playing, lyrics or the queue beside it, and the
+// spectrum along the bottom. it is always dark, and while it is open the keys
+// drive playback: space, ←/→ to seek, ↑/↓ for the volume, and Esc to leave.
 FocusScope {
     id: root
 
@@ -17,7 +16,7 @@ FocusScope {
 
     readonly property bool lyricsAvailable: Player.loadingLyrics || (Player.hasLyrics && Player.lyrics.count > 0)
     /// the switch's segments, in order; "" is the artwork alone
-    readonly property list<string> panels: ["", "lyrics", "queue", "sleep", "audio"]
+    readonly property list<string> panels: ["", "lyrics", "queue"]
 
     /// what the layout makes room for beside the artwork
     property string panel
@@ -273,9 +272,7 @@ FocusScope {
             segments: [
                 Segment { symbol: "image"; tooltip: "Artwork" },
                 Segment { symbol: "lyrics"; tooltip: "Lyrics"; enabled: root.lyricsAvailable },
-                Segment { symbol: "queue_music"; tooltip: "Playing Next" },
-                Segment { symbol: "bedtime"; tooltip: "Sleep Timer" },
-                Segment { symbol: "tune"; tooltip: "Sound" }
+                Segment { symbol: "queue_music"; tooltip: "Playing Next" }
             ]
             onActivated: (index) => {
                 const next = root.panels[index]
@@ -338,8 +335,6 @@ FocusScope {
                 switch (root.shownPanel) {
                 case "lyrics": return lyrics
                 case "queue": return queue
-                case "sleep": return sleep
-                case "audio": return sound
                 default: return null
                 }
             }
@@ -367,30 +362,6 @@ FocusScope {
             scheme: root.scheme
         }
     }
-    Component {
-        id: sleep
-        SleepTimerPanel {
-            scheme: root.scheme
-        }
-    }
-    Component {
-        id: sound
-        // Sound is taller than the panel on short windows, so it scrolls
-        Flickable {
-            id: soundScroll
-            contentHeight: soundPanel.implicitHeight + 24
-            boundsBehavior: Flickable.StopAtBounds
-            clip: true
-
-            SoundPanel {
-                id: soundPanel
-                y: 12
-                width: soundScroll.width
-                scheme: root.scheme
-            }
-        }
-    }
-
     // --- spectrum ------------------------------------------------------------------
 
     SpectrumView {

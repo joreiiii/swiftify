@@ -118,6 +118,8 @@ Playlist playlist(const QJsonObject &object)
     if (result.uri.isEmpty()) {
         result.uri = QStringLiteral("spotify:playlist:") + result.id;
     }
+    result.recency = object.value(QStringLiteral("recency")).toInteger();
+    result.isDj = object.value(QStringLiteral("dj")).toBool();
     return result;
 }
 
@@ -151,6 +153,7 @@ std::optional<Artist> artist(const QJsonObject &object)
         string(object, "name"),
         preferredArtworkUrl(object.value(QStringLiteral("images")).toArray(), 640),
         uri,
+        object.value(QStringLiteral("recency")).toInteger(),
     };
 }
 

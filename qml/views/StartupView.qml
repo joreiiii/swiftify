@@ -2,8 +2,24 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import Swiftify
 
-// while the saved login is checked (SpotifyStartupLoadingView)
+// while the saved login is checked and the library loads (SpotifyStartupLoadingView)
 Item {
+    id: root
+
+    property string message: "Checking your saved Spotify login…"
+
+    // over the whole window, which fills in behind it unseen
+    Rectangle {
+        anchors.fill: parent
+        color: Appearance.colors.layer0
+    }
+    MouseArea {
+        anchors.fill: parent
+        acceptedButtons: Qt.AllButtons
+        hoverEnabled: true
+        onWheel: (wheel) => wheel.accepted = true
+    }
+
     Rectangle {
         anchors.horizontalCenter: parent.horizontalCenter
         y: -height / 2
@@ -51,7 +67,7 @@ Item {
 
         TitleText {
             anchors.horizontalCenter: parent.horizontalCenter
-            text: "Swiftify (Modded)"
+            text: "Spotify"
             font.pixelSize: Appearance.fontSize.headline
             font.weight: Font.Bold
         }
@@ -64,7 +80,7 @@ Item {
 
         StyledText {
             anchors.horizontalCenter: parent.horizontalCenter
-            text: "Checking your saved Spotify login…"
+            text: root.message
             color: Appearance.colors.onSurfaceVariant
         }
     }

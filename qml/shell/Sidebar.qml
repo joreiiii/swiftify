@@ -34,14 +34,11 @@ Item {
         if (kind !== "artists") {
             rows.push({ type: "liked", index: -1, name: "Favourite Songs", pinned: true })
         }
-        if (kind !== "artists" && LocalFiles.songs.count > 0) {
-            rows.push({ type: "local", index: -1, name: "Local Files", pinned: true })
-        }
         const rest = []
         if (kind !== "artists") {
             for (let index = 0; index < playlistCount; ++index) {
                 const playlist = Library.playlists.at(index)
-                const row = { type: "playlist", index: index, name: playlist.name, pinned: Library.isPinned(playlist.id) }
+                const row = { type: "playlist", index: index, name: playlist.name, pinned: Library.isPinned(playlist.id), recency: playlist.recency }
                 if (row.pinned) {
                     rows.push(row)
                 } else {
@@ -52,11 +49,15 @@ Item {
         if (kind !== "playlists") {
             for (let index = 0; index < artistCount; ++index) {
                 const artist = Library.followedArtists.at(index)
-                rest.push({ type: "artist", index: index, name: artist.name, pinned: false })
+                rest.push({ type: "artist", index: index, name: artist.name, pinned: false, recency: artist.recency })
             }
         }
+        // a to z, or spotify's recents: playlists and artists together, the
+        // one played or added last first
         if (alphabetical) {
             rest.sort((a, b) => a.name.localeCompare(b.name))
+        } else {
+            rest.sort((a, b) => b.recency - a.recency)
         }
         return rows.concat(rest)
     }
@@ -69,9 +70,10 @@ Item {
         kind = kind === next ? "" : next
     }
 
-    // home and search, above the library
+    // home and search, above the library, unless the top bar has them
     Column {
         id: top
+        visible: !Settings.centeredSearch
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: parent.top
@@ -118,8 +120,9 @@ Item {
         id: head
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.top: top.bottom
-        anchors.topMargin: 10
+        // right at the top while home and search are in the top bar
+        anchors.top: Settings.centeredSearch ? parent.top : top.bottom
+        anchors.topMargin: Settings.centeredSearch ? 4 : 10
         spacing: 8
 
         Item {
@@ -207,94 +210,13 @@ Item {
     }
 
     // the recent searches, under the field while it is focused and empty
-    Rectangle {
-        id: recent
-        objectName: "recentSearches"
-        x: search.x
+    RecentSearches {
+        // level with the field: it sits in a row inset like Home's
+        x: search.parent.x + search.x
         y: top.y + search.parent.y + search.y + search.height + 6
-        z: 20
         width: search.width
-        height: recentColumn.implicitHeight + 16
-        radius: 12
-        color: Appearance.colors.surfaceContainerHigh
-        border.width: 1
-        border.color: Appearance.colors.outlineVariant
-        visible: search.editing && search.text.length === 0 && Library.searchHistoryPreview.count > 0
-
-        Column {
-            id: recentColumn
-            x: 8
-            y: 8
-            width: parent.width - 16
-
-            StyledText {
-                leftPadding: 8
-                height: 32
-                verticalAlignment: Text.AlignVCenter
-                text: "Recent searches"
-                font.weight: Font.Bold
-            }
-
-            Repeater {
-                model: Library.searchHistoryPreview
-
-                delegate: Item {
-                    id: row
-
-                    required property int index
-                    readonly property song song: Library.searchHistoryPreview.at(index)
-
-                    width: recentColumn.width
-                    height: 56
-
-                    Rectangle {
-                        anchors.fill: parent
-                        radius: 8
-                        color: rowHover.hovered ? Appearance.colors.surfaceContainerHighest : "transparent"
-                    }
-                    ArtworkImage {
-                        x: 8
-                        anchors.verticalCenter: parent.verticalCenter
-                        width: 40
-                        height: 40
-                        radius: 4
-                        source: row.song.artworkUrl
-                    }
-                    Column {
-                        anchors.left: parent.left
-                        anchors.leftMargin: 60
-                        anchors.right: parent.right
-                        anchors.rightMargin: 8
-                        anchors.verticalCenter: parent.verticalCenter
-                        spacing: 2
-
-                        StyledText {
-                            width: parent.width
-                            elide: Text.ElideRight
-                            text: row.song.name
-                            font.weight: Font.DemiBold
-                        }
-                        StyledText {
-                            width: parent.width
-                            elide: Text.ElideRight
-                            text: "Song  •  " + row.song.artists
-                            font.pixelSize: Appearance.fontSize.smaller
-                            color: Appearance.colors.onSurfaceVariant
-                        }
-                    }
-                    HoverHandler {
-                        id: rowHover
-                        cursorShape: Qt.PointingHandCursor
-                    }
-                    TapHandler {
-                        onTapped: {
-                            Player.playSong(row.song)
-                            root.forceActiveFocus()
-                        }
-                    }
-                }
-            }
-        }
+        field: search
+        focusTarget: root
     }
 
     // a library row: a cover (round for an artist), the name, and what it is
@@ -317,6 +239,11 @@ Item {
         }
 
         function open() {
+            // the dj has no page of its own: it plays, as in spotify
+            if (isPlaylist && playlist.isDj) {
+                play()
+                return
+            }
             switch (entry.type) {
             case "liked": Library.showSavedSongs(); break
             case "local": Library.showLocalFiles(); break
@@ -325,7 +252,18 @@ Item {
             }
         }
 
-        height: 60
+        function play() {
+            switch (entry.type) {
+            case "liked": Player.playFromModel(Library.savedSongs, 0); break
+            case "local": Player.playFromModel(LocalFiles.songs, 0); break
+            case "playlist": Library.playPlaylist(playlist); break
+            case "artist": Library.playArtist(artist); break
+            }
+        }
+
+        // spotify's compact layout: smaller rows and covers
+        readonly property real coverSize: Settings.compactLibrary ? 32 : 44
+        height: Settings.compactLibrary ? 44 : 60
 
         Rectangle {
             anchors.fill: parent
@@ -345,8 +283,8 @@ Item {
             x: 14
             anchors.verticalCenter: parent.verticalCenter
             visible: !row.isPlaylist && !row.isArtist
-            width: 44
-            height: 44
+            width: row.coverSize
+            height: row.coverSize
             radius: 6
             gradient: Gradient {
                 GradientStop { position: 0; color: row.entry.type === "liked" ? "#4a2bd6" : Appearance.colors.tertiaryContainer }
@@ -366,8 +304,8 @@ Item {
             x: 14
             anchors.verticalCenter: parent.verticalCenter
             visible: row.isPlaylist || row.isArtist
-            width: 44
-            height: 44
+            width: row.coverSize
+            height: row.coverSize
             radius: 6
             circular: row.isArtist
             squiggly: false
@@ -375,9 +313,47 @@ Item {
             placeholderSymbol: row.isArtist ? "person" : "queue_music"
         }
 
+        // hovering the row shows a play button over the cover: the cover
+        // plays at once, the rest of the row opens the page
+        Rectangle {
+            id: coverPlay
+            x: 14
+            anchors.verticalCenter: parent.verticalCenter
+            width: row.coverSize
+            height: row.coverSize
+            radius: row.isArtist ? width / 2 : 6
+            color: Qt.rgba(0, 0, 0, coverArea.containsMouse ? 0.55 : 0.4)
+            opacity: hover.hovered ? 1 : 0
+            visible: opacity > 0
+
+            Behavior on opacity {
+                NumberAnimation { duration: Appearance.duration(140); easing.type: Easing.OutCubic }
+            }
+
+            MaterialSymbol {
+                anchors.centerIn: parent
+                text: "play_arrow"
+                iconSize: coverArea.containsMouse ? 28 : 24
+                fill: 1
+                color: "white"
+
+                Behavior on iconSize {
+                    NumberAnimation { duration: Appearance.motion(160); easing.type: Easing.OutBack }
+                }
+            }
+
+            MouseArea {
+                id: coverArea
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: row.play()
+            }
+        }
+
         Column {
             anchors.left: parent.left
-            anchors.leftMargin: 70
+            anchors.leftMargin: row.coverSize + 26
             anchors.right: parent.right
             anchors.rightMargin: 12
             anchors.verticalCenter: parent.verticalCenter
@@ -425,7 +401,7 @@ Item {
             cursorShape: Qt.PointingHandCursor
         }
         TapHandler {
-            onTapped: row.open()
+            onTapped: if (!coverArea.containsMouse) row.open()
         }
         TapHandler {
             acceptedButtons: Qt.RightButton

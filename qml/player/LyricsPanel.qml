@@ -13,6 +13,16 @@ Item {
     property bool suspended: false
     property MaterialScheme scheme: Appearance.colors
 
+    StyledText {
+        id: header
+        x: 18
+        y: 16
+        text: "Songtext:"
+        font.pixelSize: Appearance.fontSize.normal
+        font.weight: Font.DemiBold
+        color: root.scheme.onSurfaceVariant
+    }
+
     Column {
         anchors.centerIn: parent
         Reveal.shown: Player.loadingLyrics
@@ -30,12 +40,14 @@ Item {
         Reveal.shown: !Player.loadingLyrics && !Player.hasLyrics
         symbol: "lyrics"
         title: "Lyrics Unavailable"
-        description: Player.lyricsMessage.length > 0 ? Player.lyricsMessage : "i guess bro"
+        description: Player.lyricsMessage.length > 0 ? Player.lyricsMessage : "This song has no lyrics on Spotify."
     }
 
     ListView {
         id: list
         anchors.fill: parent
+        // the lines scroll under the title, not over it
+        anchors.topMargin: header.y + header.height + 4
         Reveal.shown: !Player.loadingLyrics && Player.hasLyrics
         model: Player.lyrics
         spacing: 22

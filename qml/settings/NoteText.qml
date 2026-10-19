@@ -2,14 +2,12 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import Swiftify
 
-// the small print under a group of settings.
+// the small print under a setting, as spotify's.
 StyledText {
     width: parent ? parent.width : 0
-    leftPadding: 12
-    rightPadding: 12
-    topPadding: 4
+    rightPadding: 64
     bottomPadding: 8
     wrapMode: Text.Wrap
     font.pixelSize: Appearance.fontSize.smaller
-    color: Appearance.colors.onSurfaceVariant
+    color: Appearance.colors.outline
 }

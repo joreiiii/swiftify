@@ -86,7 +86,11 @@ class LibraryStore : public QObject {
     Q_PROPERTY(swiftify::Playlist selectedPlaylist READ selectedPlaylist NOTIFY selectedPlaylistChanged FINAL)
     Q_PROPERTY(bool selectedPlaylistEditable READ isSelectedPlaylistEditable NOTIFY selectedPlaylistChanged FINAL)
     Q_PROPERTY(swiftify::Album currentAlbum READ currentAlbum NOTIFY destinationChanged FINAL)
-    Q_PROPERTY(swiftify::Artist currentArtist READ currentArtist NOTIFY destinationChanged FINAL)
+    Q_PROPERTY(swiftify::Artist currentArtist READ currentArtist NOTIFY currentArtistChanged FINAL)
+    /// the open artist's monthly listeners, 0 until spotify has said
+    Q_PROPERTY(qint64 artistListeners READ artistListeners NOTIFY artistListenersChanged FINAL)
+    /// changes whenever an artist is followed or unfollowed, for bindings on isFollowing
+    Q_PROPERTY(int followRevision READ followRevision NOTIFY followedChanged FINAL)
     Q_PROPERTY(bool canGoBack READ canGoBack NOTIFY destinationChanged FINAL)
     /// how many destinations back goes through; the page host keeps one
     /// page for each, so going back shows the page as it was left
@@ -127,8 +131,17 @@ class LibraryStore : public QObject {
     /// the artist of the song playing, for the now playing view: id, name,
     /// imageUrl and biography
     Q_PROPERTY(QVariantMap artistCard READ artistCard NOTIFY artistCardChanged FINAL)
+    /// the now playing view's other parts for the song playing: its
+    /// credits, the artist's concerts and listeners (extras.rs)
+    Q_PROPERTY(QVariantMap songExtras READ songExtras NOTIFY songExtrasChanged FINAL)
     /// a song radio (Page::Radio): the song it is made from, and its songs
     Q_PROPERTY(swiftify::Song radioSeed READ radioSeed NOTIFY destinationChanged FINAL)
+    /// spotify's categories for search's browse all: {title, uri, color, image}
+    Q_PROPERTY(QVariantList genres READ genres NOTIFY genresChanged FINAL)
+    /// the category open: {uri, title, color, sections: [{title, items: [{kind, name,
+    /// subtitle, artworkUrl, and the playlist, album or artist}]}]}
+    Q_PROPERTY(QVariantMap genre READ genre NOTIFY genreChanged FINAL)
+    Q_PROPERTY(bool loadingGenre READ isLoadingGenre NOTIFY genreChanged FINAL)
     Q_PROPERTY(swiftify::SongListModel *radioSongs READ radioSongs CONSTANT FINAL)
     Q_PROPERTY(swiftify::SongListModel *albumSongs READ albumSongs CONSTANT FINAL)
     Q_PROPERTY(swiftify::SongListModel *artistTopSongs READ artistTopSongs CONSTANT FINAL)
@@ -141,6 +154,11 @@ class LibraryStore : public QObject {
     Q_PROPERTY(swiftify::ArtistListModel *searchArtists READ searchArtists CONSTANT FINAL)
     Q_PROPERTY(swiftify::PlaylistListModel *searchPlaylists READ searchPlaylists CONSTANT FINAL)
     Q_PROPERTY(bool hasSearchResults READ hasSearchResults NOTIFY searchChanged FINAL)
+    /// the kinds of result, best first: "songs", "artists", "albums", "playlists"
+    Q_PROPERTY(QStringList searchOrder READ searchOrder NOTIFY searchChanged FINAL)
+    /// the best result: its kind, name, subtitle, artworkUrl, and the song,
+    /// artist, album or playlist itself
+    Q_PROPERTY(QVariantMap searchTop READ searchTop NOTIFY searchChanged FINAL)
     Q_PROPERTY(swiftify::SongListModel *searchHistory READ searchHistory CONSTANT FINAL)
     /// the first eight, which is what the search page shows
     Q_PROPERTY(swiftify::SongListModel *searchHistoryPreview READ searchHistoryPreview CONSTANT FINAL)
@@ -152,6 +170,9 @@ class LibraryStore : public QObject {
     Q_PROPERTY(bool loadingPlaylists READ isLoadingPlaylists NOTIFY loadingChanged FINAL)
     Q_PROPERTY(bool loadingSongs READ isLoadingSongs NOTIFY loadingChanged FINAL)
     Q_PROPERTY(bool loadingHome READ isLoadingHome NOTIFY loadingChanged FINAL)
+    /// the start's loading is done: profile, playlists, followed artists and
+    /// home are there, so the window can show them all at once
+    Q_PROPERTY(bool libraryReady READ isLibraryReady NOTIFY libraryReadyChanged FINAL)
     Q_PROPERTY(bool loadingSavedSongs READ isLoadingSavedSongs NOTIFY loadingChanged FINAL)
     Q_PROPERTY(bool searching READ isSearching NOTIFY loadingChanged FINAL)
     Q_PROPERTY(bool loadingArtist READ isLoadingArtist NOTIFY loadingChanged FINAL)
@@ -161,7 +182,7 @@ public:
     /// LocalFiles is the grid of playlists made on this computer, opening on
     /// LocalTracks, every music file of the person's own as a list
     enum class Page { Home, Search, Songs, Playlists, PinnedPlaylists, Playlist, Album, Artist, LocalFiles, LocalTracks,
-                      Radio, Profile };
+                      Radio, Profile, Genre, Settings };
     Q_ENUM(Page)
     enum class SortOrder { Playlist, Title, Artist, Album, Duration };
     Q_ENUM(SortOrder)
@@ -184,6 +205,8 @@ public:
     bool isSelectedPlaylistEditable() const;
     Album currentAlbum() const { return m_destination.album; }
     Artist currentArtist() const { return m_destination.artist; }
+    qint64 artistListeners() const { return m_artistListeners; }
+    int followRevision() const { return m_followRevision; }
     bool canGoBack() const { return !m_history.isEmpty(); }
     int historyDepth() const { return int(m_history.size()); }
 
@@ -215,6 +238,7 @@ public:
     bool isLoadingFriendActivity() const { return m_loadingFriendActivity; }
     QString friendActivityMessage() const { return m_friendActivityMessage; }
     QVariantMap artistCard() const { return m_artistCard; }
+    QVariantMap songExtras() const { return m_songExtras; }
     SongListModel *radioSongs() const { return m_radioSongs; }
     SongListModel *albumSongs() const { return m_albumSongs; }
     SongListModel *artistTopSongs() const { return m_artistTopSongs; }
@@ -228,6 +252,8 @@ public:
     ArtistListModel *searchArtists() const { return m_searchArtists; }
     PlaylistListModel *searchPlaylists() const { return m_searchPlaylists; }
     bool hasSearchResults() const;
+    QStringList searchOrder() const { return m_searchOrder; }
+    QVariantMap searchTop() const { return m_searchTop; }
     SongListModel *searchHistory() const { return m_searchHistory; }
     SongListModel *searchHistoryPreview() const { return m_searchHistoryPreview; }
 
@@ -237,6 +263,7 @@ public:
     bool isLoadingPlaylists() const { return m_loadingPlaylists; }
     bool isLoadingSongs() const { return m_loadingSongs; }
     bool isLoadingHome() const { return m_loadingHome; }
+    bool isLibraryReady() const { return m_initialLoadDone && m_followedLoadedOnce; }
     bool isLoadingSavedSongs() const { return m_loadingSavedSongs; }
     bool isSearching() const { return m_searching; }
     bool isLoadingArtist() const { return m_loadingArtist; }
@@ -248,22 +275,33 @@ public:
 
     Q_INVOKABLE void showHome();
     Q_INVOKABLE void showSearch();
+    Q_INVOKABLE void showSettings();
     Q_INVOKABLE void showSavedSongs();
     Q_INVOKABLE void showPlaylists();
     Q_INVOKABLE void showPinnedPlaylists();
     /// a song's radio, as spotify's song radio page: the song, then songs like it
     Q_INVOKABLE void showRadio(const swiftify::Song &seed);
+    /// a category's page, as spotify's genre pages
+    Q_INVOKABLE void showGenre(const QString &uri, const QString &title, const QString &color);
+    QVariantList genres() const { return m_genres; }
+    QVariantMap genre() const { return m_genre; }
+    bool isLoadingGenre() const { return m_loadingGenre; }
     /// the person's own profile: their playlists, who they follow, what they played
     Q_INVOKABLE void showProfile();
     /// plays a spotify track by its uri, looked up first: a friend's song
     Q_INVOKABLE void playTrackUri(const QString &uri);
+    /// plays a playlist (the dj too) or an artist's top songs at once,
+    /// without opening it: the sidebar's play button over a cover
+    Q_INVOKABLE void playPlaylist(const swiftify::Playlist &playlist);
+    Q_INVOKABLE void playArtist(const swiftify::Artist &artist);
     /// fills artistCard for an artist, once per artist and run
     Q_INVOKABLE void loadArtistCard(const QString &artistId);
-    /// the genres of each artist by id, asked of spotify once per artist
-    /// per run and remembered (SongFilter's chips)
-    QCoro::Task<QHash<QString, QStringList>> genresOf(QStringList artistIds);
+    /// fills songExtras for a song and its first artist
+    Q_INVOKABLE void loadSongExtras(const QString &trackUri, const QString &artistId);
     /// fetches what's new and friend activity afresh, for the top bar's popups
     Q_INVOKABLE void loadNewReleases();
+    /// spotify's categories, for search's browse all (browse.rs)
+    Q_INVOKABLE void loadBrowse();
     Q_INVOKABLE void loadFriendActivity();
     /// music files of the person's own (LocalLibrary): the playlists made of
     /// them, and a way to all of them
@@ -284,6 +322,9 @@ public:
     Q_INVOKABLE void togglePinned(const swiftify::Playlist &playlist);
     Q_INVOKABLE bool isSaved(const QString &uri) const { return m_savedUris.contains(uri); }
     Q_INVOKABLE void toggleSaved(const swiftify::Song &song);
+    Q_INVOKABLE bool isFollowing(const QString &artistId) const;
+    /// follows the artist, or unfollows them, as spotify's follow button
+    Q_INVOKABLE void toggleFollow(const swiftify::Artist &artist);
     Q_INVOKABLE QVariantList editablePlaylists() const;
     Q_INVOKABLE void clearSearchHistory();
     Q_INVOKABLE void retryLoadingPlaylists();
@@ -309,17 +350,24 @@ public:
     void recordSearchPlayback(const Song &song);
 
 signals:
+    void currentArtistChanged();
+    void libraryReadyChanged();
+    void artistListenersChanged();
+    void followedChanged();
     void destinationChanged();
     void selectedPlaylistChanged();
     void profileChanged();
     void pinsChanged();
     void playlistViewChanged();
     void searchChanged();
+    void genresChanged();
+    void genreChanged();
     void savedChanged();
     void savedSongTotalChanged();
     void loadingChanged();
     void friendActivityChanged();
     void artistCardChanged();
+    void songExtrasChanged();
     void newReleasesMessageChanged();
     void playlistSaveFinished(bool ok);
     void playlistDeleted(const QString &id);
@@ -334,6 +382,8 @@ private:
         Playlist playlist;
         /// the song a radio is made from
         Song radioSeed;
+        /// the category a genre page shows
+        QString genreUri;
 
         bool operator==(const Destination &other) const;
     };
@@ -370,17 +420,32 @@ private:
     QCoro::Task<> loadSavedSongTotal();
     /// the followed artists, alongside the playlists
     QCoro::Task<> loadFollowedArtists();
+    QCoro::Task<> runArtistListeners(QString artistId, QString uri);
+    /// asks for the listeners of artists not asked about yet, one at a time
+    QCoro::Task<> prefetchListeners(QList<Artist> artists);
+    QCoro::Task<qint64> fetchListeners(QString uri);
+    QCoro::Task<> runToggleFollow(Artist artist, bool follow);
     QCoro::Task<> runNewReleases();
     QCoro::Task<> runFriendActivity();
     QCoro::Task<> runPlayTrackUri(QString uri);
+    QCoro::Task<> runPlayPlaylist(Playlist playlist);
+    QCoro::Task<> indexPlaylistsForSearch(QList<Playlist> playlists);
+    QCoro::Task<> runPlayArtist(Artist artist);
     QCoro::Task<> runArtistCard(QString artistId);
     QCoro::Task<> runRadioLoad(Song seed, CancelToken token);
+    QCoro::Task<> runGenreLoad(QString uri);
     /// a save or removal before the list has loaded
     void adjustSavedSongTotal(int delta);
     QCoro::Task<> loadSavedStatuses(QList<Song> songs);
     QCoro::Task<> runPlaylistLoad(Playlist playlist, CancelToken token);
     QCoro::Task<> runAlbumLoad(Album album, CancelToken token);
     QCoro::Task<> runArtistLoad(Artist artist, CancelToken token);
+    struct RankedResults : SearchResults {
+        QStringList order;
+        QVariantMap top;
+    };
+    RankedResults searchLibrary(const QString &query) const;
+    RankedResults catalogResults(const QJsonObject &answer) const;
     QCoro::Task<> runSearch(QString query, CancelToken token);
     QCoro::Task<> runToggleSaved(Song song, bool shouldSave, quint64 generation);
     QCoro::Task<> runSongNavigation(Song song, bool toAlbum);
@@ -421,11 +486,17 @@ private:
     ArtistListModel *m_followedArtists;
     SongListModel *m_radioSongs;
     QPointer<PlaybackController> m_player;
-    QHash<QString, QStringList> m_artistGenres;
     QVariantMap m_artistCard;
     QHash<QString, QVariantMap> m_artistCards;
-    /// spotify gave no genres, or would not: not asked again this run
-    bool m_genresUnavailable = false;
+    QVariantMap m_songExtras;
+    QStringList m_searchOrder;
+    QVariantList m_genres;
+    QVariantMap m_genre;
+    bool m_loadingGenre = false;
+    /// every playlist's songs, for the search (indexPlaylistsForSearch)
+    QList<Song> m_searchIndex;
+    QVariantMap m_searchTop;
+    QString m_songExtrasUri;
     AlbumListModel *m_newReleases;
     bool m_loadingNewReleases = false;
     QString m_newReleasesMessage;
@@ -443,10 +514,18 @@ private:
     PlaylistListModel *m_searchPlaylists;
     SongListModel *m_searchHistory;
     SongListModel *m_searchHistoryPreview;
+    /// what a play button outside its page plays from
+    SongListModel *m_quickPlaySongs = new SongListModel(this);
+    class DjNarrator *m_dj = nullptr;
 
     QSet<QString> m_savedUris;
     QSet<QString> m_pendingSavedUris;
     int m_savedRevision = 0;
+    qint64 m_artistListeners = 0;
+    /// artists' monthly listeners as spotify last said, by id, so a page
+    /// opens with them
+    QHash<QString, qint64> m_listenerCache;
+    int m_followRevision = 0;
     int m_savedStatusRevision = 0;
     /// spotify's count, kept up with saves and removals until the list loads
     int m_savedSongTotal = -1;
@@ -456,6 +535,9 @@ private:
     bool m_loadingPlaylists = false;
     bool m_loadingSongs = false;
     bool m_loadingHome = false;
+    bool m_initialLoadDone = false;
+    bool m_followedLoadedOnce = false;
+    void markReady(bool &part);
     bool m_loadingSavedSongs = false;
     bool m_searching = false;
     bool m_loadingArtist = false;

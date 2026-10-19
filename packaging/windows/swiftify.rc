@@ -1,2 +1,27 @@
 // the icon explorer, the taskbar and alt-tab show for swiftify.exe
 IDI_ICON1 ICON "swiftify.ico"
+
+// the name windows shows for it: in the taskbar, search and the task manager
+1 VERSIONINFO
+FILEVERSION 0,6,2,0
+PRODUCTVERSION 0,6,2,0
+FILEOS 0x40004
+FILETYPE 0x1
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "FileDescription", "Spotify"
+            VALUE "ProductName", "Spotify"
+            VALUE "FileVersion", "0.6.2"
+            VALUE "ProductVersion", "0.6.2"
+            VALUE "OriginalFilename", "swiftify.exe"
+            VALUE "Comments", "A modified version of Swiftify, developed by addenator"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END

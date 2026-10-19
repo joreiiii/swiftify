@@ -471,6 +471,13 @@ pub unsafe extern "C" fn swiftify_core_report_playback(
 }
 
 async_call!(
+    /// completes with what a library request, `{"op": ..., ...}` as json,
+    /// answers: what was asked for, or `null` for a change made.
+    swiftify_core_library_json(request) => |core| {
+        core.library_json(request).await
+    }
+);
+async_call!(
     /// completes with an artist's top songs and albums, as json.
     swiftify_core_artist_json(artist_uri) => |core| {
         core.artist_json(artist_uri).await
@@ -628,6 +635,35 @@ pub unsafe extern "C" fn swiftify_core_set_audio_cache(
     match unsafe { read_str(path) } {
         Ok(path) => error_string(handle.core.set_audio_cache(path, limit_bytes)),
         Err(error) => into_raw(error),
+    }
+}
+/// spotify's audio settings as json (SpotifyCore::set_audio_options).
+/// returns null on success, or an error message to free.
+///
+/// # Safety
+/// `core` is null or live; `options` is a nul-terminated string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn swiftify_core_set_audio_options(core: *const SwiftifyCore, options: *const c_char) -> *mut c_char {
+    // SAFETY: forwarded from the caller.
+    let Some(handle) = (unsafe { handle(core) }) else {
+        return into_raw(MISSING_CORE.to_owned());
+    };
+    // SAFETY: forwarded from the caller.
+    match unsafe { read_str(options) } {
+        Ok(options) => error_string(handle.core.set_audio_options(options)),
+        Err(error) => into_raw(error),
+    }
+}
+/// the output devices there are as a json array of names, to free.
+///
+/// # Safety
+/// `core` is null or live.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn swiftify_core_output_devices(core: *const SwiftifyCore) -> *mut c_char {
+    // SAFETY: forwarded from the caller.
+    match unsafe { handle(core) } {
+        Some(handle) => into_raw(handle.core.output_devices_json()),
+        None => into_raw("[]".to_owned()),
     }
 }
 fallible_call!(swiftify_core_set_playback_shaping(tempo: f32, pitch_semitones: f32, preserves_pitch: bool)

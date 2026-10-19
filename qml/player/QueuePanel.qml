@@ -81,6 +81,6 @@ Item {
         Reveal.shown: Player.upNext.count === 0
         symbol: "queue_music"
         title: "Queue Empty"
-        description: UiState.catchphrase
+        description: "Songs you add to the queue will show up here."
     }
 }

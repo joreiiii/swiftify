@@ -103,9 +103,6 @@ public:
     /// maximizes the window, or restores it from maximized
     Q_INVOKABLE void toggleMaximized(QObject *target) const;
     Q_INVOKABLE void minimizeWindow(QObject *target) const;
-    /// the system's share sheet for a link (windows), or the link copied
-    /// where there is none; says whether it only copied
-    Q_INVOKABLE bool share(QObject *target, const QString &title, const QString &url) const;
 
 signals:
     void raiseRequested();

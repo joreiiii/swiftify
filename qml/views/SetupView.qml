@@ -14,49 +14,6 @@ Flickable {
     boundsBehavior: Flickable.StopAtBounds
     ScrollBar.vertical: StyledScrollBar { topPadding: 3 + Appearance.sizes.pageTop }
 
-    component Step: Row {
-        id: step
-        property int number
-        property string title
-        property string detail
-
-        spacing: 12
-        width: parent ? parent.width : 560
-
-        Rectangle {
-            width: 26
-            height: 26
-            radius: 13
-            color: Appearance.colors.primary
-
-            StyledText {
-                anchors.centerIn: parent
-                text: step.number
-                font.weight: Font.Bold
-                font.pixelSize: Appearance.fontSize.smallie
-                color: Appearance.colors.onPrimary
-            }
-        }
-
-        Column {
-            width: step.width - 38
-            spacing: 2
-
-            StyledText {
-                text: step.title
-                font.pixelSize: Appearance.fontSize.normal
-                font.weight: Font.DemiBold
-            }
-            StyledText {
-                width: parent.width
-                text: step.detail
-                wrapMode: Text.Wrap
-                color: Appearance.colors.onSurfaceVariant
-                font.pixelSize: Appearance.fontSize.smallie
-            }
-        }
-    }
-
     Stickers {
         width: root.width
         height: Math.max(root.height, column.y + column.height)
@@ -92,106 +49,19 @@ Flickable {
             width: parent.width
             horizontalAlignment: Text.AlignHCenter
             wrapMode: Text.Wrap
-            text: "Swiftify needs a Client ID from your own Spotify developer app. You only have to set this up once."
+            text: "Sign in with your Spotify account to see your library and play music. Spotify Premium is needed to play music."
             color: Appearance.colors.onSurfaceVariant
         }
 
-        Column {
-            width: parent.width
-            spacing: 14
-
-            Step {
-                number: 1
-                title: "Create a Spotify app"
-                detail: "Open the Spotify Developer Dashboard, choose Create app, and select Web API if Spotify asks."
-            }
-
-            TextButton {
-                x: 38
-                variant: TextButton.Text
-                symbol: "open_in_new"
-                text: "Open Spotify Developer Dashboard"
-                onClicked: App.openUrl("https://developer.spotify.com/dashboard")
-            }
-
-            Step {
-                number: 2
-                title: "Add Swiftify's redirect URI"
-                detail: "In the app settings, add this exact address under Redirect URIs, then save:"
-            }
-
-            Rectangle {
-                x: 38
-                width: redirect.implicitWidth + 24
-                height: redirect.implicitHeight + 16
-                radius: Appearance.rounding.verySmall
-                color: Appearance.colors.surfaceContainerHigh
-
-                TextEdit {
-                    id: redirect
-                    anchors.centerIn: parent
-                    text: Session.redirectUri
-                    readOnly: true
-                    selectByMouse: true
-                    font.family: Appearance.monoFontFamily
-                    font.pixelSize: Appearance.fontSize.smallie
-                    color: Appearance.colors.onSurface
-                    selectionColor: Appearance.colors.primary
-                    selectedTextColor: Appearance.colors.onPrimary
-                }
-            }
-
-            Step {
-                number: 3
-                title: "Paste your Client ID"
-                detail: "Copy the Client ID from the app settings. You do not need the Client Secret."
-            }
-        }
-
-        OutlinedTextField {
+        // one login, as in spotify's own app: the library rides on the
+        // playback session, so the screen goes once it is connected
+        TextButton {
             anchors.horizontalCenter: parent.horizontalCenter
-            width: Math.min(460, parent.width)
-            placeholder: "Spotify Client ID"
-            text: Session.libraryClientId
-            onTextEdited: Session.libraryClientId = text
-            onAccepted: Session.beginLibraryLogin()
-        }
-
-        // the screen stays until both are connected (UiState.needsSetup):
-        // each button says when its half is done, and the next one leads
-        Row {
-            anchors.horizontalCenter: parent.horizontalCenter
-            spacing: 12
-
-            TextButton {
-                variant: Session.libraryConnected ? TextButton.Tonal : TextButton.Filled
-                symbol: Session.libraryConnected ? "check" : ""
-                text: Session.libraryConnected ? "Library Connected" : "Connect Library"
-                enabled: !Session.libraryConnected && Session.libraryClientId.trim().length > 0
-                onClicked: Session.beginLibraryLogin()
-            }
-            TextButton {
-                variant: Session.libraryConnected && !Session.connected ? TextButton.Filled : TextButton.Tonal
-                symbol: Session.connected ? "check" : ""
-                text: Session.connected ? "Playback Connected" : "Connect Playback"
-                enabled: !Session.connected
-                onClicked: Session.beginPlaybackLogin()
-            }
-        }
-
-        StyledText {
-            anchors.horizontalCenter: parent.horizontalCenter
-            width: parent.width
-            horizontalAlignment: Text.AlignHCenter
-            wrapMode: Text.Wrap
-            text: Session.libraryConnected && !Session.connected
-                  ? "Your library is connected. Now connect playback so Swiftify can play music."
-                  : Session.connected && !Session.libraryConnected
-                    ? "Playback is connected. Now connect your library to see your music."
-                    : "Connect Library first, then Connect Playback so Swiftify can play music."
-            font.pixelSize: Appearance.fontSize.smaller
-            color: Session.libraryConnected !== Session.connected ? Appearance.colors.primary
-                                                                  : Appearance.colors.onSurfaceVariant
+            variant: TextButton.Filled
+            symbol: Session.loginInProgress ? "" : "login"
+            text: Session.loginInProgress ? "Signing In…" : "Sign In with Spotify"
+            enabled: !Session.loginInProgress
+            onClicked: Session.beginPlaybackLogin()
         }
     }
 }

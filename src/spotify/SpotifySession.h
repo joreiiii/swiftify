@@ -83,9 +83,10 @@ public:
     bool isLibraryConnected() const { return m_libraryConnected; }
     bool libraryNeedsAuthorizationUpgrade() const { return m_libraryNeedsUpgrade; }
     bool hasFullLibraryAccess() const { return m_libraryConnected && !m_libraryNeedsUpgrade; }
-    bool hasLibraryToken() const { return !m_libraryAccessToken.isEmpty(); }
+    bool hasLibraryToken() const { return m_libraryConnected; }
     bool hasLibraryRefreshToken() const { return !m_libraryRefreshToken.isEmpty(); }
     bool isEvaluatingStoredLogin() const { return m_evaluatingStoredLogin; }
+    /// spotify's own client id, which the library signs in with as playback does
     QString libraryClientId() const { return m_libraryClientId; }
     void setLibraryClientId(const QString &clientId);
     /// waiting on the browser: from opening the page until its callback
@@ -259,57 +260,23 @@ private:
 template <typename T>
 QCoro::Task<T> SpotifySession::withLibraryAccessToken(std::function<QCoro::Task<T>(QString)> operation)
 {
+    // the library goes through the playback session, as spotify's own apps
+    // do: one login, and no token of its own to hand over
     const quint64 generation = m_generation;
-    if (m_libraryAccessToken.isEmpty()) {
-        throw SpotifyError(SpotifyError::Kind::Session, QStringLiteral("Connect your Spotify library to continue."));
+    if (!m_connected && m_playbackLogin.isEmpty() && m_refreshToken.isEmpty()) {
+        throw SpotifyError(SpotifyError::Kind::Session, QStringLiteral("Sign in with Spotify to continue."));
     }
-
     try {
-        QString accessToken = m_libraryAccessToken;
-        if (m_libraryAccessTokenExpiration.isValid()
-            && m_libraryAccessTokenExpiration <= QDateTime::currentDateTimeUtc().addSecs(60)) {
-            accessToken = co_await refreshLibraryAccessToken();
-        }
+        co_await ensureFreshPlaybackConnection();
         throwIfStale(generation);
-
-        bool retry = false;
         if constexpr (std::is_void_v<T>) {
-            try {
-                co_await operation(accessToken);
-            } catch (const SpotifyError &error) {
-                if (!error.shouldRefreshAccessToken()) {
-                    throw;
-                }
-                retry = true;
-            }
-            if (retry) {
-                throwIfStale(generation);
-                const QString retryToken = !m_libraryAccessToken.isEmpty() && m_libraryAccessToken != accessToken
-                    ? m_libraryAccessToken
-                    : co_await refreshLibraryAccessToken();
-                co_await operation(retryToken);
-            }
+            co_await operation(QString());
             throwIfStale(generation);
             co_return;
         } else {
-            std::optional<T> value;
-            try {
-                value = co_await operation(accessToken);
-            } catch (const SpotifyError &error) {
-                if (!error.shouldRefreshAccessToken()) {
-                    throw;
-                }
-                retry = true;
-            }
-            if (retry) {
-                throwIfStale(generation);
-                const QString retryToken = !m_libraryAccessToken.isEmpty() && m_libraryAccessToken != accessToken
-                    ? m_libraryAccessToken
-                    : co_await refreshLibraryAccessToken();
-                value = co_await operation(retryToken);
-            }
+            T value = co_await operation(QString());
             throwIfStale(generation);
-            co_return std::move(*value);
+            co_return value;
         }
     } catch (const SpotifyError &) {
         // a failure that lands after a logout belongs to nobody.

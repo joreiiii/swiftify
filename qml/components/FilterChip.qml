@@ -7,6 +7,9 @@ import Swiftify
 AbstractButton {
     id: chip
 
+    /// its fill at rest: lighter where it sits on a card of the same colour
+    property color baseColor: Appearance.colors.surfaceContainerHigh
+
     implicitWidth: label.implicitWidth + 24
     implicitHeight: 30
     hoverEnabled: true
@@ -14,7 +17,7 @@ AbstractButton {
     background: Rectangle {
         radius: height / 2
         color: chip.checked ? Appearance.colors.primary
-             : chip.hovered ? Appearance.colors.surfaceContainerHighest : Appearance.colors.surfaceContainerHigh
+             : chip.hovered ? Qt.lighter(chip.baseColor, 1.25) : chip.baseColor
 
         Behavior on color {
             ElementMoveFastColor {}

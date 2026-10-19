@@ -23,14 +23,48 @@ use rodio::{
     },
 };
 
-/// a stream on the default device, stopped until it is played, that plays the
+/// the output device chosen by name (spotify's output setting), or none for
+/// the system's default
+pub(crate) static OUTPUT_DEVICE: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+/// the names of the output devices there are, the system's default first
+pub(crate) fn output_devices() -> Vec<String> {
+    let host = cpal::default_host();
+    let default = host.default_output_device().and_then(|device| device.name().ok());
+    let mut names: Vec<String> = host
+        .output_devices()
+        .map(|devices| devices.filter_map(|device| device.name().ok()).collect())
+        .unwrap_or_default();
+    names.sort();
+    names.dedup();
+    if let Some(default) = default {
+        names.retain(|name| *name != default);
+        names.insert(0, default);
+    }
+    names
+}
+
+/// the chosen device while it is there, or the system's default
+fn chosen_device() -> Option<cpal::Device> {
+    let host = cpal::default_host();
+    let chosen = OUTPUT_DEVICE.lock().ok().and_then(|name| name.clone());
+    chosen
+        .and_then(|name| {
+            host.output_devices()
+                .ok()?
+                .find(|device| device.name().is_ok_and(|found| found == name))
+        })
+        .or_else(|| host.default_output_device())
+}
+
+/// a stream on the chosen device, stopped until it is played, that plays the
 /// interleaved stereo `fill` writes. a device not of two channels or not of
 /// floats gets the same stereo, mixed down or padded, in its own format.
 pub(crate) fn open_stereo_stream<F>(fill: F) -> Option<(cpal::Stream, u32)>
 where
     F: FnMut(&mut [f32]) + Clone + Send + 'static,
 {
-    let device = cpal::default_host().default_output_device()?;
+    let device = chosen_device()?;
     let supported = device.default_output_config().ok()?;
     let config: cpal::StreamConfig = supported.config();
     let rate = config.sample_rate.0;

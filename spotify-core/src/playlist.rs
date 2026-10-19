@@ -221,9 +221,9 @@ pub(crate) struct TrackPayload {
 
 #[derive(Clone, Serialize)]
 pub(crate) struct ArtistPayload {
-    id: String,
-    uri: String,
-    name: String,
+    pub(crate) id: String,
+    pub(crate) uri: String,
+    pub(crate) name: String,
 }
 
 #[derive(Clone, Serialize)]
@@ -243,6 +243,14 @@ pub(crate) struct ImagePayload {
 }
 
 impl TrackPayload {
+    /// its album's id and the image id of its largest cover, for the mosaic
+    /// spotify makes of a playlist's first albums
+    pub(crate) fn album_cover(&self) -> Option<(String, String)> {
+        let album = self.album.as_ref()?;
+        let image = album.images.iter().max_by_key(|image| image.width)?;
+        Some((album.id.clone(), image.url.rsplit('/').next()?.to_owned()))
+    }
+
     /// none for a track spotify sent back without a name, which it does for
     /// one it no longer has
     fn new(uri: &str, track: &metadata::Track) -> Option<Self> {

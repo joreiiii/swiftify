@@ -73,7 +73,13 @@ void swiftify_core_playlist_json(const SwiftifyCore *core, uint64_t request_id,
 /* an artist's top songs and albums, read through the session: json with
  * topTracks (shaped like the playlist page) and albums (like the web api's
  * simplified albums) */
+/* spotify's audio settings as json; null on success, or an error to free */
+char *swiftify_core_set_audio_options(const SwiftifyCore *core, const char *options);
+/* the output devices as a json array of names, to free */
+char *swiftify_core_output_devices(const SwiftifyCore *core);
 void swiftify_core_artist_json(const SwiftifyCore *core, uint64_t request_id, const char *artist_uri);
+/* completes with what a library request, {"op": ..., ...} as json, answers */
+void swiftify_core_library_json(const SwiftifyCore *core, uint64_t request_id, const char *request);
 /* what the people the person follows are listening to: spotify's
  * buddylist, as json */
 void swiftify_core_friends_json(const SwiftifyCore *core, uint64_t request_id);

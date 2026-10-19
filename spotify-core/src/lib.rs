@@ -25,6 +25,12 @@ use serde::Serialize;
 use tokio::{sync::watch, time::timeout};
 
 mod artist;
+mod browse;
+mod dj;
+mod extras;
+mod library;
+mod narration;
+mod search;
 mod connect_presence;
 mod dsp;
 mod file_playback;
@@ -87,6 +93,9 @@ struct SpotifyState {
     mixer: Option<Arc<dyn Mixer>>,
     volume: f32,
     stream_bitrate: Bitrate,
+    /// spotify's volume normalisation, and its loudness (quiet, normal, loud)
+    /// as a pregain in decibels
+    normalisation: Option<f64>,
     /// where streamed songs are kept, and the most it may hold in bytes
     audio_cache: Option<(String, u64)>,
     local_playback: Option<file_playback::LocalPlayback>,
@@ -106,6 +115,7 @@ impl Default for SpotifyState {
             mixer: None,
             volume: 0.75,
             stream_bitrate: Bitrate::default(),
+            normalisation: Some(0.0),
             audio_cache: None,
             local_playback: None,
             local_sink: None,
@@ -358,12 +368,11 @@ impl SpotifyCore {
             mixer::find(None).ok_or_else(|| "no librespot volume mixer is available".to_owned())?;
         let mixer = mixer_builder(MixerConfig::default())
             .map_err(|error| format!("failed to create volume mixer: {error}"))?;
-        let stream_bitrate = self.lock_state()?.stream_bitrate;
-        let player_config = PlayerConfig {
-            position_update_interval: Some(Duration::from_secs(1)),
-            bitrate: stream_bitrate,
-            ..PlayerConfig::default()
+        let (stream_bitrate, normalisation) = {
+            let state = self.lock_state()?;
+            (state.stream_bitrate, state.normalisation)
         };
+        let player_config = Self::player_config(stream_bitrate, normalisation);
         let player = self.make_player_slot(&session, &mixer, player_config.clone(), true, 1.0);
         let standby = self.make_player_slot(&session, &mixer, player_config, false, 0.0);
 
@@ -513,12 +522,13 @@ impl SpotifyCore {
         stop_cached_local_sink();
         self.lock_state()?.local_sink = None;
 
-        let (session, mixer, stream_bitrate) = {
+        let (session, mixer, stream_bitrate, normalisation) = {
             let state = self.lock_state()?;
             (
                 state.session.clone(),
                 state.mixer.clone(),
                 state.stream_bitrate,
+                state.normalisation,
             )
         };
         let (Some(session), Some(mixer)) = (session, mixer) else {
@@ -542,11 +552,7 @@ impl SpotifyCore {
             drop(previous);
         }
 
-        let player_config = PlayerConfig {
-            position_update_interval: Some(Duration::from_secs(1)),
-            bitrate: stream_bitrate,
-            ..PlayerConfig::default()
-        };
+        let player_config = Self::player_config(stream_bitrate, normalisation);
         let player = self.make_player_slot(&session, &mixer, player_config.clone(), true, 1.0);
         let standby = self.make_player_slot(&session, &mixer, player_config, false, 0.0);
         let mut state = self.lock_state()?;
@@ -881,6 +887,39 @@ impl SpotifyCore {
         }
     }
 
+    fn player_config(bitrate: Bitrate, normalisation: Option<f64>) -> PlayerConfig {
+        PlayerConfig {
+            position_update_interval: Some(Duration::from_secs(1)),
+            bitrate,
+            normalisation: normalisation.is_some(),
+            normalisation_pregain_db: normalisation.unwrap_or_default(),
+            ..PlayerConfig::default()
+        }
+    }
+
+    /// spotify's audio settings, as json: `normalise` and its `pregainDb`
+    /// (quiet -6, normal 0, loud +6), `mono`, and the output `device` by
+    /// name ("" for the system's). normalisation and the device apply once
+    /// the output is rebuilt (restart_audio_output); mono at once
+    pub fn set_audio_options(&self, options: String) -> Result<(), String> {
+        let options: serde_json::Value =
+            serde_json::from_str(&options).map_err(|error| format!("not audio options: {error}"))?;
+        let flag = |key: &str| options.get(key).and_then(serde_json::Value::as_bool).unwrap_or_default();
+        self.lock_state()?.normalisation = flag("normalise")
+            .then(|| options.get("pregainDb").and_then(serde_json::Value::as_f64).unwrap_or_default());
+        spectrum::MONO.store(flag("mono"), std::sync::atomic::Ordering::Relaxed);
+        if let Ok(mut device) = output::OUTPUT_DEVICE.lock() {
+            let name = options.get("device").and_then(serde_json::Value::as_str).unwrap_or_default();
+            *device = (!name.is_empty()).then(|| name.to_owned());
+        }
+        Ok(())
+    }
+
+    /// the output devices there are, the system's default first, as json
+    pub fn output_devices_json(&self) -> String {
+        serde_json::to_string(&output::output_devices()).unwrap_or_else(|_| "[]".to_owned())
+    }
+
     /// applies to the next player, since librespot fixes the bitrate when the
     /// player is built. reconnecting playback picks it up.
     pub fn set_stream_quality(&self, kbps: u32) -> Result<(), String> {
@@ -1047,6 +1086,12 @@ impl SpotifyCore {
     /// web api no longer gives the songs of
     pub async fn playlist_json(&self, playlist_uri: String) -> Result<String, String> {
         playlist::playlist_json(&self.session()?, &playlist_uri).await
+    }
+
+    /// the person's library through the session, as spotify's own apps
+    /// reach it (`library::request_json`)
+    pub async fn library_json(&self, request: String) -> Result<String, String> {
+        library::request_json(&self.session()?, &request).await
     }
 
     /// an artist's top songs and albums, read through the session, as json

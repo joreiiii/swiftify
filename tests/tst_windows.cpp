@@ -243,7 +243,7 @@ private slots:
         QCOMPARE(immersiveClose->mapToScene(QPointF()), QPointF(24, 42));
         rig.app.handleCommand(QStringLiteral("close-immersive"));
         QTRY_COMPARE(window->property("immersiveReveal").toReal(), 0.0);
-        const auto settings = rig.show(QStringLiteral("SettingsPages"));
+        const auto settings = rig.show(QStringLiteral("SettingsView"));
         QVERIFY(settings);
         settings->setProperty("page", 4);
         auto *selector = settings->findChild<QQuickItem *>(QStringLiteral("windowControlsMode"));

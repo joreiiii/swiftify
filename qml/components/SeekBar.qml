@@ -92,9 +92,10 @@ Item {
         // its own that had the window drawn at the display's rate
         property real phase: root.visible ? -(UiState.spin * 4.36) % (2 * Math.PI) : 0
         property real thickness: root.expanded ? root.expandedThickness : root.restThickness
-        property real handleWidth: root.expanded ? 4 : 0
+        // spotify's line runs unbroken; its handle is the dot below
+        property real handleWidth: 0
         property real handleHeight: 18
-        property real gap: 4
+        property real gap: 0
         property color activeColor: root.activeColor
         property color trackColor: root.trackColor
         property color handleColor: root.activeColor
@@ -109,6 +110,22 @@ Item {
         }
         Behavior on handleWidth {
             ElementMoveFast {}
+        }
+    }
+
+    // the handle: a dot at the position while the line is hovered or dragged
+    Rectangle {
+        width: 12
+        height: 12
+        radius: 6
+        x: root.shownFraction * root.width - width / 2
+        anchors.verticalCenter: parent.verticalCenter
+        color: "white"
+        visible: Player.hasSong
+        scale: root.expanded ? 1 : 0
+
+        Behavior on scale {
+            NumberAnimation { duration: Appearance.motion(140); easing.type: Easing.OutCubic }
         }
     }
 

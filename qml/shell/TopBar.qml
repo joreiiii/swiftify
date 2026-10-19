@@ -18,7 +18,6 @@ Item {
     readonly property real searchRightEdge: rightControls.x - 8
     // Reserve the collapsed field's space even while its overlay is focused.
     readonly property real reservedSearchWidth: Math.max(40, Math.min(340, searchRightEdge - searchLeftEdge - (onPlaylist ? playlistActions.implicitWidth + 8 : 0)))
-    readonly property string playlistLink: "https://open.spotify.com/playlist/" + Library.selectedPlaylist.id
 
     function focusSearch() {
         if (search.visible) {
@@ -68,17 +67,14 @@ Item {
                 tooltip: "Edit Playlist"
             }
             ToolbarButton {
+                id: shareButton
                 effect: ToolbarButton.Pop
                 Reveal.shown: !Library.selectedPlaylist.isLocal
                 size: root.buttonSize
                 iconSize: root.compact ? 19 : 26
                 shape: "circle"
                 symbol: "ios_share"
-                onClicked: {
-                    if (App.share(root.Window.window, Library.selectedPlaylist.name, root.playlistLink)) {
-                        UiState.toastRequested("Playlist link copied");
-                    }
-                }
+                onClicked: playlistShare.popupAt(shareButton, 0, shareButton.height)
                 tooltip: "Share"
             }
             ToolbarButton {
@@ -231,16 +227,10 @@ Item {
                 symbol: "create_new_folder"
                 onTriggered: trackPicker.pickFolder()
             }
-            StyledMenuItem {
-                visible: !Library.selectedPlaylist.isLocal
-                height: visible ? implicitHeight : 0
-                text: "Share"
-                symbol: "ios_share"
-                onTriggered: {
-                    if (App.share(root.Window.window, Library.selectedPlaylist.name, root.playlistLink)) {
-                        UiState.toastRequested("Playlist link copied");
-                    }
-                }
+            ShareMenu {
+                enabled: !Library.selectedPlaylist.isLocal
+                uri: Library.selectedPlaylist.uri
+                label: Library.selectedPlaylist.name
             }
             StyledMenuSeparator {
                 visible: Library.selectedPlaylistEditable
@@ -254,6 +244,14 @@ Item {
                 destructive: true
                 onTriggered: UiState.deletePlaylistRequested(Library.selectedPlaylist)
             }
+        }
+    }
+
+    MenuLoader {
+        id: playlistShare
+        sourceComponent: ShareMenu {
+            uri: Library.selectedPlaylist.uri
+            label: Library.selectedPlaylist.name
         }
     }
 

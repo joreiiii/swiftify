@@ -33,7 +33,7 @@ QtObject {
         property: "speed"
         value: root.spinSpeed
     }
-    readonly property string catchphrase: "i mean i guess bro"
+    readonly property string catchphrase: "Swiftify (Modded) by jorei_"
 
     /// a clicked cover flying to the hero of the page it opens (HeroFlight).
     /// the click arms it with where the cover was; the hero that appears
@@ -158,6 +158,13 @@ QtObject {
     property bool setupUnderway: false
     /// the setup shows rather than the library
     readonly property bool needsSetup: !Session.libraryConnected || (setupUnderway && !Session.connected)
+
+    // what the panels beside the page have to show. a panel with nothing
+    // stays away, rather than saying so, and its button is greyed, as
+    // spotify's are
+    readonly property bool lyricsAvailable: Player.hasSong && (Player.loadingLyrics || Player.hasLyrics)
+    readonly property bool nowPlayingAvailable: Player.hasSong
+    readonly property bool queueAvailable: Player.hasSong || Player.upNext.count > 0
 
     function followSetup() {
         if (!Session.evaluatingStoredLogin && !Session.libraryConnected) {

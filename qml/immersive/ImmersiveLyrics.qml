@@ -37,7 +37,7 @@ Item {
         scheme: root.scheme
         symbol: "lyrics"
         title: "Lyrics Unavailable"
-        description: Player.lyricsMessage.length > 0 ? Player.lyricsMessage : UiState.catchphrase
+        description: Player.lyricsMessage.length > 0 ? Player.lyricsMessage : "This song has no lyrics on Spotify."
     }
 
     ListView {

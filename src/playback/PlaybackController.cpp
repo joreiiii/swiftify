@@ -30,8 +30,15 @@ namespace {
 
 PlaybackController *s_instance = nullptr;
 
-const QString kCatchphrase = QStringLiteral("i mean i guess bro");
+// what the lyrics panel says when a song has none
+const QString kNoLyrics = QStringLiteral("This song has no lyrics on Spotify.");
 const QString kVolumeKey = QStringLiteral("playerVolume");
+// the song last playing and how far in, so the player opens on it
+const QString kLastSongKey = QStringLiteral("lastSong");
+const QString kLastPositionKey = QStringLiteral("lastSongPosition");
+const QString kLastQueueKey = QStringLiteral("lastQueue");
+/// the most of the queue kept for the next start, around the song playing
+constexpr int kKeptQueueLength = 400;
 const QString kVolumeBeforeMuteKey = QStringLiteral("playerVolumeBeforeMute");
 
 /// a restart is offered after this much of a song has played
@@ -64,7 +71,7 @@ PlaybackController::PlaybackController(PlaybackCore *core, SpotifySession *sessi
     m_volumeBeforeMute = std::clamp(
         m_settings->value(kVolumeBeforeMuteKey, storedVolume > 0.01 ? storedVolume : 0.75).toDouble(), 0.01, 1.0);
     try {
-        m_core->setVolume(float(m_volume));
+        m_core->setVolume(float(m_volume * m_ducking));
     } catch (const SpotifyError &) {
     }
 
@@ -75,16 +82,72 @@ PlaybackController::PlaybackController(PlaybackCore *core, SpotifySession *sessi
         updatePlaybackWorkers();
     });
     connect(m_session, &SpotifySession::playbackConnected, this, [this] {
+        // the song the player opened on has its lyrics once spotify is there
+        if (m_currentSong && m_playbackNeedsLoad && !m_restoredLyricsLoaded) {
+            m_restoredLyricsLoaded = true;
+            loadLyrics(*m_currentSong);
+            // the queue it opened on had nothing after it: autoplay's songs
+            // show up next at once, as spotify's do, not once play is pressed
+            topUpAutoplay();
+        }
         try {
-            m_core->setVolume(float(m_volume));
+            m_core->setVolume(float(m_volume * m_ducking));
         } catch (const SpotifyError &) {
         }
     });
     connect(m_session, &SpotifySession::loggedOut, this, &PlaybackController::reset);
+    connect(m_settings, &Settings::privateSessionChanged, this, &PlaybackController::reportToConnect);
+    connect(m_settings, &Settings::shareListeningActivityChanged, this, &PlaybackController::reportToConnect);
+
+    // the song last playing, paused where it was, as spotify opens: play
+    // loads it and goes on from there
+    const QJsonObject last = QJsonDocument::fromJson(m_settings->value(kLastSongKey).toByteArray()).object();
+    if (!last.isEmpty()) {
+        const Song song = Song::fromJson(last);
+        if (!song.uri.isEmpty()) {
+            m_currentSong = song;
+            m_playbackNeedsLoad = true;
+            m_durationMs = quint32(std::max(song.durationMs, 0));
+            m_restoredPositionMs = std::min(quint32(m_settings->value(kLastPositionKey, 0).toUInt()), m_durationMs);
+            m_livePositionMs = m_restoredPositionMs;
+            m_savedPositionMs = m_restoredPositionMs;
+
+            // the queue it was playing in, so up next and skipping are there
+            // before play is pressed
+            QList<Song> queue;
+            for (const QJsonValue &value : QJsonDocument::fromJson(m_settings->value(kLastQueueKey).toByteArray()).array()) {
+                queue.append(Song::fromJson(value.toObject()));
+            }
+            const auto at = std::find_if(queue.begin(), queue.end(), [&](const Song &item) { return item.uri == song.uri; });
+            if (at != queue.end()) {
+                m_currentSong = *at;
+                m_queue = queue;
+            } else {
+                m_queue = {*m_currentSong};
+            }
+            m_upNext->setSongs(upNextSongs());
+            m_previouslyPlayed->setSongs(previouslyPlayedSongs());
+        }
+    }
+}
+
+void PlaybackController::rememberQueue()
+{
+    // kept around the song playing, so a long playlist stays a small setting
+    const int index = std::max(0, currentQueueIndex());
+    const int first = std::max(0, std::min(index - kKeptQueueLength / 4, int(m_queue.size()) - kKeptQueueLength));
+    QJsonArray kept;
+    for (int position = first; position < m_queue.size() && kept.size() < kKeptQueueLength; ++position) {
+        kept.append(m_queue.at(position).toJson());
+    }
+    m_settings->setValue(kLastQueueKey, QJsonDocument(kept).toJson(QJsonDocument::Compact));
 }
 
 PlaybackController::~PlaybackController()
 {
+    if (m_currentSong) {
+        m_settings->setValue(kLastPositionKey, m_livePositionMs);
+    }
     m_playbackRequest.cancel();
     m_lyricsRequest.cancel();
     if (s_instance == this) {
@@ -122,6 +185,12 @@ void PlaybackController::setCurrentSong(const std::optional<Song> &song, quint32
         || (song && m_currentSong && !song->isSameInstance(*m_currentSong));
     m_currentSong = song;
     m_crossfadeMs = crossfadeMs;
+    if (changed && song) {
+        m_settings->setValue(kLastSongKey, QJsonDocument(song->toJson()).toJson(QJsonDocument::Compact));
+        m_settings->setValue(kLastPositionKey, 0);
+        m_savedPositionMs = 0;
+        m_restoredPositionMs = 0;
+    }
     m_crossfadeDeadline.setRemainingTime(qint64(crossfadeMs));
     if (changed) {
         emit currentSongChanged();
@@ -160,6 +229,11 @@ void PlaybackController::setLivePosition(quint32 positionMs)
     const bool couldRestart = m_livePositionMs > kRestartThresholdMs;
     const bool liveChanged = m_livePositionMs != positionMs;
     m_livePositionMs = positionMs;
+    // where the song is, kept every few seconds for the next launch
+    if (m_currentSong && (positionMs > m_savedPositionMs + 5000 || positionMs + 5000 < m_savedPositionMs)) {
+        m_savedPositionMs = positionMs;
+        m_settings->setValue(kLastPositionKey, positionMs);
+    }
     if (liveChanged) {
         emit livePositionChanged();
     }
@@ -190,7 +264,10 @@ void PlaybackController::reportToConnect()
 {
     // a file of the person's own is nothing spotify knows: it hears of none
     const bool spotify = m_currentSong && !m_currentSong->isLocalFile();
-    m_core->reportPlayback(spotify ? m_currentSong->uri : QString(), m_playing, m_livePositionMs, m_durationMs);
+    // a private session, or listening activity not shared, tells spotify
+    // connect, and so friends and discord, of nothing
+    const bool shared = !m_settings->privateSession() && m_settings->shareListeningActivity();
+    m_core->reportPlayback(spotify && shared ? m_currentSong->uri : QString(), m_playing, m_livePositionMs, m_durationMs);
 }
 
 // --- queue ---------------------------------------------------------------------------
@@ -347,6 +424,7 @@ void PlaybackController::refreshSongDetails(const QList<Song> &fresh)
 
 void PlaybackController::queueDidChange()
 {
+    rememberQueue();
     m_upNext->setSongs(upNextSongs());
     m_previouslyPlayed->setSongs(previouslyPlayedSongs());
     emit queueChanged();
@@ -385,6 +463,10 @@ void PlaybackController::playFromModel(SongListModel *model, int index, bool fro
 {
     if (!model || index < 0 || index >= model->count()) {
         return;
+    }
+    // spotify's "show the now playing view when play is clicked"
+    if (m_settings->showNowPlayingOnPlay()) {
+        setShowingNowPlaying(true);
     }
     beginPlayback(model->songs().at(index), model->songs(), fromSearch);
 }
@@ -508,6 +590,20 @@ void PlaybackController::playFromQueue(const Song &song)
 void PlaybackController::startPlayback(const Song &song, bool recordHistory, bool fromSearch,
                                        quint32 crossfadeDurationMs)
 {
+    // explicit songs, when they are not allowed: the next one plays instead
+    if (!m_settings->allowExplicit() && song.isExplicit) {
+        // its place in the queue, so the one after it is found
+        setCurrentSong(song);
+        if (const auto next = m_explicitSkips < 100 ? nextQueueSong(false) : std::nullopt) {
+            ++m_explicitSkips;
+            startPlayback(*next, recordHistory, fromSearch, 0);
+        } else {
+            m_explicitSkips = 0;
+            m_errors->show(QStringLiteral("Explicit songs are turned off in Settings."));
+        }
+        return;
+    }
+    m_explicitSkips = 0;
     if (recordHistory && m_currentSong && !m_currentSong->isSameInstance(song)) {
         m_history.append(*m_currentSong);
     }
@@ -651,6 +747,15 @@ QCoro::Task<> PlaybackController::runStartPlayback(Song song, CancelToken token,
     } else {
         setStatus(QStringLiteral("Playing"));
         m_playbackNeedsLoad = false;
+        // the song the player opened on goes on from where it was
+        if (m_restoredPositionMs > 0) {
+            try {
+                m_core->seek(m_restoredPositionMs);
+                setLivePosition(m_restoredPositionMs);
+            } catch (const SpotifyError &) {
+            }
+            m_restoredPositionMs = 0;
+        }
         setLoading(false);
         setPlaying(true);
         if (fromSearch) {
@@ -769,6 +874,14 @@ void PlaybackController::prepareForSleep()
         pause();
     }
     m_session->markPlaybackConnectionSuspect();
+}
+
+void PlaybackController::rebuildAudioOutput()
+{
+    m_audioOutputNeedsRestart = true;
+    if (m_playing && m_currentSong) {
+        detach(restartAudioOutput(m_playbackRequest.renew()));
+    }
 }
 
 QCoro::Task<> PlaybackController::restartAudioOutput(CancelToken token)
@@ -930,7 +1043,7 @@ void PlaybackController::setVolume(double requested)
         return;
     }
     try {
-        m_core->setVolume(float(volume));
+        m_core->setVolume(float(volume * m_ducking));
     } catch (const SpotifyError &error) {
         reportError(QStringLiteral("Changing volume"), error.message());
         return;
@@ -942,6 +1055,24 @@ void PlaybackController::setVolume(double requested)
         m_settings->setValue(kVolumeBeforeMuteKey, volume);
     }
     emit volumeChanged();
+}
+
+QStringList PlaybackController::outputDevices() const
+{
+    return m_core->outputDevices();
+}
+
+void PlaybackController::setDucking(double share)
+{
+    share = std::clamp(share, 0.0, 1.0);
+    if (share == m_ducking) {
+        return;
+    }
+    m_ducking = share;
+    try {
+        m_core->setVolume(float(m_volume * m_ducking));
+    } catch (const SpotifyError &) {
+    }
 }
 
 void PlaybackController::adjustVolume(double delta)
@@ -1254,7 +1385,7 @@ QCoro::Task<> PlaybackController::runLoadLyrics(Song song, CancelToken token)
         m_lyrics = std::move(lyrics);
         m_lyricsModel->setLines(m_lyrics->lines);
     } else {
-        m_lyricsMessage = kCatchphrase;
+        m_lyricsMessage = kNoLyrics;
     }
     m_lyricsRequest.finish(token);
     emit lyricsChanged();
@@ -1415,6 +1546,9 @@ void PlaybackController::reset()
     m_history.clear();
     m_shuffledQueue.clear();
     setCurrentSong(std::nullopt);
+    m_settings->setValue(kLastSongKey, QVariant());
+    m_settings->setValue(kLastQueueKey, QVariant());
+    m_restoredPositionMs = 0;
     m_playbackNeedsLoad = false;
     m_audioOutputNeedsRestart = false;
     setLoading(false);
@@ -1437,7 +1571,7 @@ void PlaybackController::reset()
     emit panelsChanged();
     // the new core starts at its own default volume
     try {
-        m_core->setVolume(float(m_volume));
+        m_core->setVolume(float(m_volume * m_ducking));
     } catch (const SpotifyError &) {
     }
     queueDidChange();

@@ -38,6 +38,10 @@ public:
     virtual QCoro::Task<QString> lyricsJson(QString spotifyUri) = 0;
     /// an artist's top songs and albums, read through the session
     virtual QCoro::Task<QString> artistJson(QString artistUri) = 0;
+    /// the person's library through the playback session, as spotify's own
+    /// apps reach it: answers a request, {"op": ..., ...}, with json shaped
+    /// as the web api's, or null for a change made
+    virtual QCoro::Task<QString> libraryJson(QByteArray request) = 0;
     /// what the people the person follows listen to (spotify's buddylist)
     virtual QCoro::Task<QString> friendsJson() = 0;
     /// a playlist's songs read through the session, shaped like the web api's
@@ -63,6 +67,11 @@ public:
     virtual void setAudioCache(const QString &path, qint64 limitBytes) = 0;
     virtual void setPlaybackShaping(float tempo, float pitchSemitones, bool preservesPitch) = 0;
     virtual void setEqualizer(const QList<float> &gainsDb) = 0;
+    /// spotify's audio settings as json: normalise, pregainDb, mono, device.
+    /// normalisation and the device apply once the output is rebuilt
+    virtual void setAudioOptions(const QByteArray &options) = 0;
+    /// the output devices there are, the system's default first
+    virtual QStringList outputDevices() const = 0;
 
     virtual bool sessionIsValid() const = 0;
     virtual bool audioOutputStalled() const = 0;

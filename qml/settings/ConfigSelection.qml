@@ -2,8 +2,9 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import Swiftify
 
-// a setting that is one of a few choices: its name, then the choices as
-// segmented buttons (end4's ConfigSelectionArray).
+// a setting that is one of a few choices: what it does in grey on the left,
+// as spotify's settings rows, and the choices as swiftify's segmented
+// buttons on the right (end4's ConfigSelectionArray).
 Item {
     id: root
 
@@ -13,22 +14,24 @@ Item {
     signal activated(int index)
 
     width: parent ? parent.width : 0
-    implicitHeight: Math.max(52, choices.implicitHeight + 12)
-    opacity: enabled ? 1 : 0.38
+    implicitHeight: Math.max(52, label.implicitHeight + 16, choices.implicitHeight + 12)
+    opacity: enabled ? 1 : 0.4
 
     StyledText {
-        x: 12
+        id: label
+        anchors.left: parent.left
         anchors.right: choices.left
-        anchors.rightMargin: 12
+        anchors.rightMargin: 24
         anchors.verticalCenter: parent.verticalCenter
         text: root.text
-        elide: Text.ElideRight
+        wrapMode: Text.Wrap
+        font.pixelSize: Appearance.fontSize.small
+        color: Appearance.colors.onSurfaceVariant
     }
 
     SegmentedControl {
         id: choices
         anchors.right: parent.right
-        anchors.rightMargin: 6
         anchors.verticalCenter: parent.verticalCenter
         segmentHeight: 32
         enabled: root.enabled

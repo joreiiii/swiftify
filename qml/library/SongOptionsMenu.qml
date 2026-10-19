@@ -163,16 +163,10 @@ StyledMenu {
         visible: !root.local
         height: visible ? implicitHeight : 0
     }
-    StyledMenuItem {
-        visible: !root.local
-        height: visible ? implicitHeight : 0
-        text: "Share"
-        symbol: "ios_share"
-        onTriggered: {
-            const link = "https://open.spotify.com/track/" + root.song.uri.split(":").pop()
-            if (App.share(root.Window.window, root.song.name + " – " + root.song.artists, link)) {
-                UiState.toastRequested("Song link copied")
-            }
-        }
+    ShareMenu {
+        // a submenu only spotify's songs have
+        enabled: !root.local
+        uri: root.local ? "" : root.song.uri
+        label: root.song.name + " – " + root.song.artists
     }
 }

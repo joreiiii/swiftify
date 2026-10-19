@@ -15,16 +15,17 @@ namespace swiftify {
 
 
 /// the filter chips over a list of songs, as spotify's playlists have them:
-/// the genres most of the songs' artists share, then the artists heard most,
-/// and the songs of the chip picked. spotify's own moods ("chill", "upbeat")
-/// come from a service of its own no other app can ask.
+/// the genres the songs' artists share (from MusicBrainz, GenreLookup), and
+/// the songs of the chip picked. spotify's own
+/// moods ("chill", "upbeat") come from a service of its own no other app
+/// can ask.
 class SongFilter : public QObject {
     Q_OBJECT
     QML_ELEMENT
 
     /// the songs filtered
     Q_PROPERTY(swiftify::SongListModel *source READ source WRITE setSource NOTIFY sourceChanged FINAL)
-    /// the chips, genres first
+    /// the chips: genres, the most shared first
     Q_PROPERTY(QStringList chips READ chips NOTIFY chipsChanged FINAL)
     /// the chip picked, or empty for every song
     Q_PROPERTY(QString active READ active WRITE setActive NOTIFY activeChanged FINAL)
@@ -49,7 +50,8 @@ signals:
 private:
     void sourceSongsChanged();
     void rebuildChips();
-    QCoro::Task<> runChips(quint64 generation, QList<Song> all, QStringList ids);
+    void showChips(const QList<Song> &all);
+    QCoro::Task<> runChips(quint64 generation, QList<Song> all, QList<Artist> artists);
     void apply();
     bool matches(const Song &song) const;
 
@@ -57,7 +59,7 @@ private:
     SongListModel *m_songs;
     QStringList m_chips;
     QString m_active;
-    /// each artist's genres, by id, as the library found them
+    /// each artist's genres, by id, as far as they are known
     QHash<QString, QStringList> m_genres;
     QTimer m_settle;
     quint64 m_generation = 0;

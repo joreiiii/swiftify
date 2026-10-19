@@ -121,6 +121,10 @@ public:
     QCoro::Task<QString> lyricsJson(QString uri) override { co_return co_await await(QStringLiteral("lyrics"), uri); }
     QCoro::Task<QString> friendsJson() override { co_return co_await await(QStringLiteral("friends"), QString()); }
     QCoro::Task<QString> artistJson(QString uri) override { co_return co_await await(QStringLiteral("artist"), uri); }
+    QCoro::Task<QString> libraryJson(QByteArray request) override
+    {
+        co_return co_await await(QStringLiteral("library"), QString::fromUtf8(request));
+    }
     QCoro::Task<QString> playlistJson(QString uri) override { co_return co_await await(QStringLiteral("playlist"), uri); }
     QCoro::Task<QString> stationJson(QString uri, QStringList, bool autoplay) override
     {
@@ -149,6 +153,8 @@ public:
     void setAudioCache(const QString &, qint64) override {}
     void setPlaybackShaping(float, float, bool) override {}
     void setEqualizer(const QList<float> &) override {}
+    void setAudioOptions(const QByteArray &) override {}
+    QStringList outputDevices() const override { return {}; }
 
     bool sessionIsValid() const override { return sessionValid; }
     bool audioOutputStalled() const override { return stalled; }

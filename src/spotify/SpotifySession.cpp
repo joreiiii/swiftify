@@ -42,11 +42,15 @@ SpotifySession::SpotifySession(PlaybackCore *core, CredentialStore *credentials,
     , m_credentials(credentials)
     , m_errors(errors)
     , m_oauth(network)
-    , m_webApi(network)
+    , m_webApi(core)
 {
     if (!s_instance) {
         s_instance = this;
     }
+    // the library signs in as spotify's own client, as playback does: no
+    // developer app of the person's own, and none of the limits spotify
+    // puts on development apps
+    m_libraryClientId = QString::fromLatin1(OAuthFlow::kPlaybackClientId);
     connect(&m_oauth, &OAuthFlow::callbackReceived, this, [this](const QUrl &url) { detach(completeLogin(url)); });
 
     // long enough for a browser to start from cold in the background (half
@@ -116,6 +120,14 @@ void SpotifySession::setConnected(bool connected)
     if (m_connected != connected) {
         m_connected = connected;
         emit connectedChanged();
+    }
+    // the library rides on the playback session: one login for both, and
+    // it loads once that login connects
+    const bool firstConnection = connected && !m_libraryConnected;
+    setLibraryConnected(connected, false);
+    setLibraryStatus(connected ? QStringLiteral("Connected") : QStringLiteral("Not connected"));
+    if (firstConnection && m_loadInitialLibrary) {
+        detach(m_loadInitialLibrary());
     }
 }
 
@@ -190,8 +202,10 @@ QCoro::Task<> SpotifySession::restore()
         playback.reset();
     }
 
+    // the library has no login of its own any more: it goes through the
+    // playback session, as spotify's own apps do
+    library.reset();
     if (library) {
-        setLibraryClientId(library->clientId);
         m_libraryRefreshToken = library->refreshToken;
         m_libraryAuthorizationVersion = library->authorizationVersion;
         setLibraryConnected(m_libraryConnected,
@@ -229,7 +243,10 @@ QCoro::Task<> SpotifySession::restore()
     if (generation != m_generation) {
         co_return;
     }
-    showWhenReady();
+    // the library rides on playback, so the window waits for that
+    if (!playback) {
+        showWhenReady();
+    }
     if (playback) {
         co_await restorePlaybackSession(*playback);
     }

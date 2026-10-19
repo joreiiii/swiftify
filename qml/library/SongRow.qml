@@ -37,7 +37,9 @@ T.AbstractButton {
     leftPadding: 14
     rightPadding: 14
 
-    onClicked: Player.playFromModel(songs, index, fromSearch)
+    // the song playing pauses and goes on, as spotify's row button does;
+    // any other starts from here
+    onClicked: isCurrent ? Player.togglePlayback() : Player.playFromModel(songs, index, fromSearch)
 
     background: Rectangle {
         radius: 8
@@ -100,7 +102,7 @@ T.AbstractButton {
                 anchors.rightMargin: -3
                 anchors.verticalCenter: parent.verticalCenter
                 Reveal.shown: root.hovered || root.isCurrent
-                text: root.hovered ? "play_arrow" : "volume_up"
+                text: root.hovered ? (root.isCurrent && Player.playing ? "pause" : "play_arrow") : "volume_up"
                 iconSize: 16
                 fill: 1
                 color: root.hovered ? Appearance.colors.onSurface : Appearance.colors.onPrimaryContainer

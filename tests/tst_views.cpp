@@ -500,7 +500,7 @@ private slots:
     void everySettingsPageDraws()
     {
         Rig rig;
-        const auto pages = rig.show(QStringLiteral("SettingsPages"));
+        const auto pages = rig.show(QStringLiteral("SettingsView"));
         QVERIFY(pages);
         // visualizer to performance, account, about
         for (int page = 0; page < 8; ++page) {
@@ -2276,7 +2276,7 @@ private slots:
     {
         QTest::addColumn<QString>("type");
         for (const char *type : {"HomeView", "SearchView", "PlaylistsView", "SavedSongsView", "LocalFilesView", "LocalTracksView", "Sidebar",
-                                 "PlayerBar", "SettingsPages", "EmptyState", "Stickers", "ShapeIcon"}) {
+                                 "PlayerBar", "SettingsView", "EmptyState", "Stickers", "ShapeIcon"}) {
             QTest::addRow("%s", type) << QString::fromLatin1(type);
         }
     }
@@ -2724,7 +2724,7 @@ private slots:
         QCOMPARE(inspector->property("y").toReal(), 8.0);
 
         // Verify SettingsPages Appearance toggle grays out when window deco is off
-        QQmlComponent settingsComponent(&rig.engine, QUrl(QStringLiteral("qrc:/qt/qml/Swiftify/qml/settings/SettingsPages.qml")));
+        QQmlComponent settingsComponent(&rig.engine, QUrl(QStringLiteral("qrc:/qt/qml/Swiftify/qml/settings/SettingsView.qml")));
         std::unique_ptr<QObject> settingsObject(settingsComponent.create());
         QVERIFY2(settingsObject, qPrintable(settingsComponent.errorString()));
         settingsObject->setProperty("page", 4);

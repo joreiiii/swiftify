@@ -37,6 +37,7 @@ public:
     QCoro::Task<QString> lyricsJson(QString spotifyUri) override;
     QCoro::Task<QString> friendsJson() override;
     QCoro::Task<QString> artistJson(QString artistUri) override;
+    QCoro::Task<QString> libraryJson(QByteArray request) override;
     QCoro::Task<QString> playlistJson(QString playlistUri) override;
     QCoro::Task<QString> stationJson(QString seedUri, QStringList previous, bool autoplay) override;
     void reportPlayback(const QString &spotifyUri, bool playing, quint32 positionMs, quint32 durationMs) override;
@@ -50,6 +51,8 @@ public:
     void setAudioCache(const QString &path, qint64 limitBytes) override;
     void setPlaybackShaping(float tempo, float pitchSemitones, bool preservesPitch) override;
     void setEqualizer(const QList<float> &gainsDb) override;
+    void setAudioOptions(const QByteArray &options) override;
+    QStringList outputDevices() const override;
 
     bool sessionIsValid() const override;
     bool audioOutputStalled() const override;

@@ -25,11 +25,20 @@ T.Menu {
 
     delegate: StyledMenuItem {}
 
+    // it unfolds from the corner it opened at: growing and dropping into
+    // place as it fades up, and folding back the same way, quicker
+    transformOrigin: T.Popup.TopLeft
     enter: Transition {
-        NumberAnimation { property: "opacity"; from: 0; to: 1; duration: Appearance.duration(150); easing.type: Easing.OutCubic }
+        ParallelAnimation {
+            NumberAnimation { property: "opacity"; from: 0; to: 1; duration: Appearance.duration(160); easing.type: Easing.OutCubic }
+            NumberAnimation { property: "scale"; from: 0.86; to: 1; duration: Appearance.motion(280); easing.type: Easing.OutBack; easing.overshoot: 1.2 }
+        }
     }
     exit: Transition {
-        NumberAnimation { property: "opacity"; to: 0; duration: Appearance.duration(100) }
+        ParallelAnimation {
+            NumberAnimation { property: "opacity"; to: 0; duration: Appearance.duration(120); easing.type: Easing.InCubic }
+            NumberAnimation { property: "scale"; to: 0.92; duration: Appearance.motion(120); easing.type: Easing.InCubic }
+        }
     }
 
     contentItem: ListView {

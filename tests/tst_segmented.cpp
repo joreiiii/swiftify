@@ -33,7 +33,7 @@ private slots:
     void selectionSurvivesSettingsNavigation() {
         testing::ViewRig rig;
         rig.settings.setReduceMotion(true);
-        const auto pages = rig.show(QStringLiteral("SettingsPages"));
+        const auto pages = rig.show(QStringLiteral("SettingsView"));
         QVERIFY(pages);
         for (bool circular : {false, true}) {
             rig.settings.setCircularVisualizer(circular);

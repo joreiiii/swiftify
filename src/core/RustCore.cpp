@@ -5,6 +5,8 @@
 #include <swiftify_core.h>
 
 #include <QCoroSignal>
+#include <QJsonArray>
+#include <QJsonDocument>
 
 #ifndef Q_OS_WIN
 #include <unistd.h>
@@ -221,6 +223,11 @@ QCoro::Task<QString> RustCore::artistJson(QString artistUri)
     co_return co_await request([&](quint64 id) { swiftify_core_artist_json(m_core, id, uri.constData()); });
 }
 
+QCoro::Task<QString> RustCore::libraryJson(QByteArray libraryRequest)
+{
+    co_return co_await request([&](quint64 id) { swiftify_core_library_json(m_core, id, libraryRequest.constData()); });
+}
+
 QCoro::Task<QString> RustCore::friendsJson()
 {
     co_return co_await request([&](quint64 id) { swiftify_core_friends_json(m_core, id); });
@@ -276,6 +283,22 @@ void RustCore::setPlaybackShaping(float tempo, float pitchSemitones, bool preser
 void RustCore::setEqualizer(const QList<float> &gainsDb)
 {
     throwIfError(swiftify_core_set_equalizer(m_core, gainsDb.constData(), size_t(gainsDb.size())));
+}
+
+void RustCore::setAudioOptions(const QByteArray &options)
+{
+    throwIfError(swiftify_core_set_audio_options(m_core, options.constData()));
+}
+
+QStringList RustCore::outputDevices() const
+{
+    char *json = swiftify_core_output_devices(m_core);
+    QStringList names;
+    for (const QJsonValue &name : QJsonDocument::fromJson(QByteArray(json)).array()) {
+        names.append(name.toString());
+    }
+    swiftify_string_free(json);
+    return names;
 }
 
 bool RustCore::sessionIsValid() const { return swiftify_core_session_is_valid(m_core); }

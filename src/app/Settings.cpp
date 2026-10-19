@@ -133,7 +133,7 @@ void Settings::load()
     m_allPlaylistsExpanded = stored<bool>(m_store, "allPlaylistsExpanded", m_allPlaylistsExpanded);
     {
         const QString raw = stored<QString>(m_store, "immersivePlayerPanel", m_immersivePlayerPanel);
-        m_immersivePlayerPanel = oneOf(raw, {QStringLiteral("artwork"), QStringLiteral("lyrics"), QStringLiteral("queue"), QStringLiteral("sleep"), QStringLiteral("audio")}, QStringLiteral("lyrics"));
+        m_immersivePlayerPanel = oneOf(raw, {QStringLiteral("artwork"), QStringLiteral("lyrics"), QStringLiteral("queue")}, QStringLiteral("lyrics"));
     }
     {
         const QString raw = stored<QString>(m_store, "sleepTimerFade", m_sleepTimerFade);
@@ -159,9 +159,174 @@ void Settings::load()
     }
     m_showWindowControls = stored<bool>(m_store, "showWindowControls", m_showWindowControls);
     m_windowControlsOnRight = stored<bool>(m_store, "windowControlsOnRight", m_windowControlsOnRight);
+    m_spotifyPlayerLayout = stored<bool>(m_store, "spotifyPlayerLayout", m_spotifyPlayerLayout);
+    m_allowExplicit = stored<bool>(m_store, "allowExplicit", m_allowExplicit);
+    m_normalizeVolume = stored<bool>(m_store, "normalizeVolume", m_normalizeVolume);
+    m_volumeLevel = stored<QString>(m_store, "volumeLevel", m_volumeLevel);
+    m_monoAudio = stored<bool>(m_store, "monoAudio", m_monoAudio);
+    m_outputDevice = stored<QString>(m_store, "outputDevice", m_outputDevice);
+    m_showNowPlayingOnPlay = stored<bool>(m_store, "showNowPlayingOnPlay", m_showNowPlayingOnPlay);
+    m_trackNotifications = stored<bool>(m_store, "trackNotifications", m_trackNotifications);
+    m_compactLibrary = stored<bool>(m_store, "compactLibrary", m_compactLibrary);
+    m_openAtLogin = stored<QString>(m_store, "openAtLogin", m_openAtLogin);
+    m_privateSession = stored<bool>(m_store, "privateSession", m_privateSession);
+    m_shareListeningActivity = stored<bool>(m_store, "shareListeningActivity", m_shareListeningActivity);
+    m_showFriendActivity = stored<bool>(m_store, "showFriendActivity", m_showFriendActivity);
+    m_hardwareAcceleration = stored<bool>(m_store, "hardwareAcceleration", m_hardwareAcceleration);
+    m_centeredSearch = stored<bool>(m_store, "centeredSearch", m_centeredSearch);
     m_nativeTitleBar = stored<bool>(m_store, "nativeTitleBar", m_nativeTitleBar);
     m_trayIcon = stored<bool>(m_store, "trayIcon", m_trayIcon);
     m_zoom = std::clamp(stored<double>(m_store, "zoom", m_zoom), 0.5, 2.0);
+}
+
+void Settings::setAllowExplicit(bool value)
+{
+    if (m_allowExplicit == value) {
+        return;
+    }
+    m_allowExplicit = value;
+    m_store.setValue(QStringLiteral("allowExplicit"), value);
+    emit allowExplicitChanged();
+}
+
+void Settings::setNormalizeVolume(bool value)
+{
+    if (m_normalizeVolume == value) {
+        return;
+    }
+    m_normalizeVolume = value;
+    m_store.setValue(QStringLiteral("normalizeVolume"), value);
+    emit normalizeVolumeChanged();
+}
+
+void Settings::setVolumeLevel(const QString &value)
+{
+    if (m_volumeLevel == value) {
+        return;
+    }
+    m_volumeLevel = value;
+    m_store.setValue(QStringLiteral("volumeLevel"), value);
+    emit volumeLevelChanged();
+}
+
+void Settings::setMonoAudio(bool value)
+{
+    if (m_monoAudio == value) {
+        return;
+    }
+    m_monoAudio = value;
+    m_store.setValue(QStringLiteral("monoAudio"), value);
+    emit monoAudioChanged();
+}
+
+void Settings::setOutputDevice(const QString &value)
+{
+    if (m_outputDevice == value) {
+        return;
+    }
+    m_outputDevice = value;
+    m_store.setValue(QStringLiteral("outputDevice"), value);
+    emit outputDeviceChanged();
+}
+
+void Settings::setShowNowPlayingOnPlay(bool value)
+{
+    if (m_showNowPlayingOnPlay == value) {
+        return;
+    }
+    m_showNowPlayingOnPlay = value;
+    m_store.setValue(QStringLiteral("showNowPlayingOnPlay"), value);
+    emit showNowPlayingOnPlayChanged();
+}
+
+void Settings::setTrackNotifications(bool value)
+{
+    if (m_trackNotifications == value) {
+        return;
+    }
+    m_trackNotifications = value;
+    m_store.setValue(QStringLiteral("trackNotifications"), value);
+    emit trackNotificationsChanged();
+}
+
+void Settings::setCompactLibrary(bool value)
+{
+    if (m_compactLibrary == value) {
+        return;
+    }
+    m_compactLibrary = value;
+    m_store.setValue(QStringLiteral("compactLibrary"), value);
+    emit compactLibraryChanged();
+}
+
+void Settings::setOpenAtLogin(const QString &value)
+{
+    if (m_openAtLogin == value) {
+        return;
+    }
+    m_openAtLogin = value;
+    m_store.setValue(QStringLiteral("openAtLogin"), value);
+    emit openAtLoginChanged();
+}
+
+void Settings::setPrivateSession(bool value)
+{
+    if (m_privateSession == value) {
+        return;
+    }
+    m_privateSession = value;
+    m_store.setValue(QStringLiteral("privateSession"), value);
+    emit privateSessionChanged();
+}
+
+void Settings::setShareListeningActivity(bool value)
+{
+    if (m_shareListeningActivity == value) {
+        return;
+    }
+    m_shareListeningActivity = value;
+    m_store.setValue(QStringLiteral("shareListeningActivity"), value);
+    emit shareListeningActivityChanged();
+}
+
+void Settings::setShowFriendActivity(bool value)
+{
+    if (m_showFriendActivity == value) {
+        return;
+    }
+    m_showFriendActivity = value;
+    m_store.setValue(QStringLiteral("showFriendActivity"), value);
+    emit showFriendActivityChanged();
+}
+
+void Settings::setHardwareAcceleration(bool value)
+{
+    if (m_hardwareAcceleration == value) {
+        return;
+    }
+    m_hardwareAcceleration = value;
+    m_store.setValue(QStringLiteral("hardwareAcceleration"), value);
+    emit hardwareAccelerationChanged();
+}
+
+void Settings::setCenteredSearch(bool value)
+{
+    if (m_centeredSearch == value) {
+        return;
+    }
+    m_centeredSearch = value;
+    m_store.setValue(QStringLiteral("centeredSearch"), value);
+    emit centeredSearchChanged();
+}
+
+void Settings::setSpotifyPlayerLayout(bool value)
+{
+    if (m_spotifyPlayerLayout == value) {
+        return;
+    }
+    m_spotifyPlayerLayout = value;
+    m_store.setValue(QStringLiteral("spotifyPlayerLayout"), value);
+    emit spotifyPlayerLayoutChanged();
 }
 
 void Settings::setVisualizersEnabled(bool value)
@@ -333,7 +498,7 @@ void Settings::setAllPlaylistsExpanded(bool value)
 
 void Settings::setImmersivePlayerPanel(const QString &raw)
 {
-    const QString value = oneOf(raw, {QStringLiteral("artwork"), QStringLiteral("lyrics"), QStringLiteral("queue"), QStringLiteral("sleep"), QStringLiteral("audio")}, QStringLiteral("lyrics"));
+    const QString value = oneOf(raw, {QStringLiteral("artwork"), QStringLiteral("lyrics"), QStringLiteral("queue")}, QStringLiteral("lyrics"));
     if (m_immersivePlayerPanel == value) {
         return;
     }

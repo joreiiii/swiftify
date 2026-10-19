@@ -42,13 +42,22 @@ Flickable {
         CollectionHero {
             width: root.width
             artworkUrl: root.artist.artworkUrl
+            // their picture, blurred, behind the whole head
+            backdropUrl: root.artist.artworkUrl
+            backdropBleed: root.topMargin
+            artworkPending: Library.loadingArtist
             circular: true
             kind: "ARTIST"
             title: root.artist.name
             titleSize: 38
+            facts: Library.artistListeners > 0
+                   ? Library.artistListeners.toLocaleString(Qt.locale("en_US"), "f", 0) + " monthly listeners"
+                   // its place, until spotify has said
+                   : "                                "
 
             actions: [
                 TextButton {
+                    id: playButton
                     iconOnly: parent ? parent.compactActions : false
                     compactSize: parent ? parent.actionSize : 48
                     implicitHeight: iconOnly ? compactSize : 48
@@ -57,6 +66,30 @@ Flickable {
                     text: "Play"
                     enabled: Library.artistTopSongs.count > 0
                     onClicked: Player.playFromModel(Library.artistTopSongs, 0)
+                },
+                // spotify's follow button: the play button's own kind, outlined.
+                // its outline reads as part of it, so it is a little smaller
+                // than play to look the same size, and centred beside it
+                Item {
+                    width: follow.width
+                    height: playButton.implicitHeight
+                    visible: root.artist.id.length > 0
+
+                    TextButton {
+                        id: follow
+                        readonly property bool following: Library.followRevision >= 0 && Library.followedArtists.count >= 0
+                                                          && Library.isFollowing(root.artist.id)
+                        anchors.verticalCenter: parent.verticalCenter
+                        variant: TextButton.Outlined
+                        labelColor: Appearance.colors.onSurface
+                        // a white wash on hover and press, not the theme's green
+                        colBackgroundHover: Qt.rgba(1, 1, 1, 0.06)
+                        colRipple: Qt.rgba(1, 1, 1, 0.12)
+                        backgroundItem.border.color: Appearance.colors.onSurface
+                        implicitHeight: playButton.implicitHeight - 3
+                        text: following ? "Following" : "Follow"
+                        onClicked: Library.toggleFollow(root.artist)
+                    }
                 }
             ]
         }

@@ -17,12 +17,15 @@ struct Artist {
     Q_PROPERTY(QUrl artworkUrl MEMBER artworkUrl FINAL)
     Q_PROPERTY(QString uri MEMBER uri FINAL)
     Q_PROPERTY(bool valid READ isValid FINAL)
+    /// when it last played or was followed, in milliseconds: the library's recents
+    Q_PROPERTY(qint64 recency MEMBER recency FINAL)
 
 public:
     QString id;
     QString name;
     QUrl artworkUrl;
     QString uri;
+    qint64 recency = 0;
 
     bool isValid() const { return !id.isEmpty(); }
     bool operator==(const Artist &) const = default;
@@ -133,6 +136,10 @@ struct Playlist {
     /// made on this computer from files of the person's own (LocalLibrary),
     /// not a spotify playlist
     Q_PROPERTY(bool isLocal READ isLocal FINAL)
+    /// when it last played or changed, in milliseconds: the library's recents
+    Q_PROPERTY(qint64 recency MEMBER recency FINAL)
+    /// spotify's dj, which plays at once rather than opening
+    Q_PROPERTY(bool isDj MEMBER isDj FINAL)
 
 public:
     QString id;
@@ -145,6 +152,8 @@ public:
     bool isPublic = false;
     bool isCollaborative = false;
     QString uri;
+    qint64 recency = 0;
+    bool isDj = false;
 
     bool isValid() const { return !id.isEmpty(); }
     bool isLocal() const { return id.startsWith(QLatin1StringView("local:")); }

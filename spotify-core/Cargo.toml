@@ -5,6 +5,9 @@ edition = "2024"
 
 [dependencies]
 env_logger = "0.11"
+# the dj's voice: its audio, asked for over the session's http (narration.rs)
+bytes = "1"
+http-body-util = "0.1"
 # the dealer's message streams, for spotify connect (connect_presence.rs)
 futures-util = { version = "0.3", default-features = false }
 hound = "3.5.1"

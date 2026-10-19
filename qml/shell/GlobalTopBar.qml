@@ -71,6 +71,123 @@ Item {
         }
     }
 
+    // --- middle: home and search, as spotify has them (Settings.centeredSearch) ----------
+
+    function focusSearch() {
+        centerSearch.focusField()
+    }
+
+    // leaving search for any other page clears it, as spotify's does; both
+    // search fields follow Library.searchQuery
+    Connections {
+        target: Library
+        function onDestinationChanged() {
+            if (Library.page !== Library.Page.Search && Library.searchQuery.length > 0) {
+                Library.searchQuery = ""
+            }
+        }
+    }
+
+    Row {
+        id: middle
+        visible: Settings.centeredSearch
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.verticalCenter: parent.verticalCenter
+        spacing: 8
+
+        // a round home, filled while home is open
+        AbstractButton {
+            id: homeButton
+            anchors.verticalCenter: parent.verticalCenter
+            width: 40
+            height: 40
+            hoverEnabled: true
+            onClicked: Library.showHome()
+
+            background: Rectangle {
+                radius: width / 2
+                color: homeButton.hovered ? Appearance.colors.surfaceContainerHighest : Appearance.colors.surfaceContainerHigh
+                scale: homeButton.hovered ? 1.04 : 1
+
+                Behavior on color {
+                    ElementMoveFastColor {}
+                }
+                Behavior on scale {
+                    NumberAnimation { duration: Appearance.motion(160); easing.type: Easing.OutCubic }
+                }
+            }
+            contentItem: Item {
+                MaterialSymbol {
+                    anchors.centerIn: parent
+                    text: "home"
+                    iconSize: 24
+                    fill: Library.page === Library.Page.Home ? 1 : 0
+                    color: Library.page === Library.Page.Home ? Appearance.colors.onSurface : Appearance.colors.onSurfaceVariant
+                }
+            }
+
+            StyledToolTip {
+                visible: homeButton.hovered
+                text: "Home"
+            }
+        }
+
+        SearchField {
+            id: centerSearch
+            objectName: "topBarSearch"
+            anchors.verticalCenter: parent.verticalCenter
+            // as wide as fits between the bar's two ends, up to spotify's
+            width: Math.max(200, Math.min(480, root.width - 2 * Math.max(left.width, right.width) - 120))
+            height: 40
+            placeholder: "What do you want to play?"
+            text: Library.searchQuery
+            trailingInset: 44
+
+            // spotify's browse: search's categories, with nothing typed
+            Rectangle {
+                anchors.right: parent.right
+                anchors.rightMargin: 44
+                anchors.verticalCenter: parent.verticalCenter
+                width: 1
+                height: 22
+                color: Appearance.colors.outlineVariant
+            }
+            IconButton {
+                anchors.right: parent.right
+                anchors.rightMargin: 6
+                anchors.verticalCenter: parent.verticalCenter
+                symbol: "inventory_2"
+                size: 32
+                iconSize: 20
+                toggled: Library.page === Library.Page.Search && Library.searchQuery.length === 0
+                tooltip: "Browse"
+                onClicked: {
+                    Library.searchQuery = ""
+                    Library.showSearch()
+                }
+            }
+            onTextChanged: {
+                if (Library.searchQuery !== text) {
+                    Library.searchQuery = text
+                }
+                if (text.trim().length > 0 && Library.page !== Library.Page.Search) {
+                    Library.showSearch()
+                } else if (text.trim().length === 0 && Library.page === Library.Page.Search) {
+                    // no empty search page: back to what was open before
+                    Library.canGoBack ? Library.goBack() : Library.showHome()
+                }
+            }
+        }
+    }
+
+    RecentSearches {
+        x: middle.x + centerSearch.x
+        y: middle.y + centerSearch.y + centerSearch.height + 6
+        width: centerSearch.width
+        field: centerSearch
+        focusTarget: root
+    }
+
     // --- right: what's new, friends, the account, the window ---------------------------------
 
     Row {
@@ -94,6 +211,7 @@ Item {
         }
         ToolbarButton {
             id: friends
+            visible: Settings.showFriendActivity
             anchors.verticalCenter: parent.verticalCenter
             size: 36
             iconSize: 20

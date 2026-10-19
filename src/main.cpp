@@ -12,6 +12,7 @@
 #include "playback/PlaybackController.h"
 #include "render/SpectrumSource.h"
 #include "spotify/CredentialStore.h"
+#include "spotify/SpotifyError.h"
 #include "spotify/SpotifySession.h"
 #include "system/SingleInstance.h"
 #include "theme/PlayerStyle.h"
@@ -40,7 +41,11 @@
 #include <QEvent>
 #include <QIcon>
 #include <QPlatformSurfaceEvent>
+#include <QDir>
 #include <QSet>
+#include <QSettings>
+#include <QJsonObject>
+#include <QJsonDocument>
 #include <QQuickWindow>
 #include <QStyleHints>
 #include <QWindow>
@@ -231,7 +236,10 @@ int main(int argc, char *argv[])
     startCompact(argv);
 #endif
     tuneSceneGraph();
+    // the name settings and the saved login are kept under: unchanged, so
+    // neither is lost. what the person sees is spotify's
     QGuiApplication::setApplicationName(QStringLiteral("Swiftify"));
+    QGuiApplication::setApplicationDisplayName(QStringLiteral("Spotify"));
     QGuiApplication::setApplicationVersion(QStringLiteral(SWIFTIFY_VERSION));
     // the wayland app id, which hyprland window rules and the .desktop file match.
     QGuiApplication::setDesktopFileName(QStringLiteral("swiftify"));
@@ -291,11 +299,13 @@ int main(int argc, char *argv[])
     LibraryStore library(&session, &settings, &errors);
     library.attachPlayer(&player);
     AudioShaping sound(&core, &settings, &session);
-    LocalLibrary localFiles(&settings);
-    library.attachLocalFiles(&localFiles);
-    // a song whose tags were edited shows as it is now wherever it is queued
-    QObject::connect(&localFiles, &LocalLibrary::scanned, &player,
-                     [&] { player.refreshSongDetails(localFiles.allSongs()); });
+    // local files are gone, as in spotify's app with them hidden: the
+    // library stays for what refers to it, with nothing in it. its own
+    // settings and storage are empty folders of its own, so whatever was
+    // added before stays on disk untouched
+    const QString noLocalFiles = QDir::tempPath() + QStringLiteral("/swiftify-no-local-files");
+    Settings localFilesSettings(noLocalFiles + QStringLiteral("/settings.ini"));
+    LocalLibrary localFiles(&localFilesSettings, nullptr, noLocalFiles);
     AppController app(nullptr);
     ArtworkCache artwork(&network);
     PlayerStyle playerStyle(&player, &theme, &artwork);
@@ -321,15 +331,58 @@ int main(int argc, char *argv[])
     QObject::connect(&devices, &AudioDeviceMonitor::outputArrived, &mpris, &Mpris::noteOutputArrived);
 #endif
 
+    // spotify's audio settings: normalisation and its loudness, mono and the
+    // output device. a new output is built for the ones it fixes
+    const auto applyAudio = [&] {
+        const QString level = settings.volumeLevel();
+        const double pregainDb = level == QLatin1StringView("quiet") ? -6.0 : level == QLatin1StringView("loud") ? 6.0 : 0.0;
+        try {
+            core.setAudioOptions(QJsonDocument(QJsonObject {{QStringLiteral("normalise"), settings.normalizeVolume()},
+                                                            {QStringLiteral("pregainDb"), pregainDb},
+                                                            {QStringLiteral("mono"), settings.monoAudio()},
+                                                            {QStringLiteral("device"), settings.outputDevice()}})
+                                     .toJson(QJsonDocument::Compact));
+        } catch (const SpotifyError &error) {
+            qWarning().noquote() << "audio settings:" << error.message();
+        }
+    };
+    const auto applyAudioToNewOutput = [&] {
+        applyAudio();
+        player.rebuildAudioOutput();
+    };
+    applyAudio();
+    QObject::connect(&settings, &Settings::monoAudioChanged, &core, applyAudio);
+    QObject::connect(&settings, &Settings::normalizeVolumeChanged, &player, applyAudioToNewOutput);
+    QObject::connect(&settings, &Settings::volumeLevelChanged, &player, applyAudioToNewOutput);
+    QObject::connect(&settings, &Settings::outputDeviceChanged, &player, applyAudioToNewOutput);
+
+    const bool startMinimized = QCoreApplication::arguments().contains(QStringLiteral("--minimized"));
     QQmlApplicationEngine engine;
 #ifdef Q_OS_WIN
+    // spotify's "open spotify automatically after you log into the computer"
+    const auto applyOpenAtLogin = [&settings] {
+        QSettings run(QStringLiteral("HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Run"),
+                      QSettings::NativeFormat);
+        const QString entry = QStringLiteral("Spotify (Swiftify)");
+        const QString mode = settings.openAtLogin();
+        if (mode == QLatin1StringView("no")) {
+            run.remove(entry);
+        } else {
+            const QString exe = QDir::toNativeSeparators(QCoreApplication::applicationFilePath());
+            run.setValue(entry, QStringLiteral("\"%1\"").arg(exe)
+                                    + (mode == QLatin1StringView("minimized") ? QStringLiteral(" --minimized") : QString()));
+        }
+    };
+    applyOpenAtLogin();
+    QObject::connect(&settings, &Settings::openAtLoginChanged, &app, applyOpenAtLogin);
+
     WindowsIntegration windowsIntegration(&player, &theme);
     engine.setInitialProperties({{QStringLiteral("visible"), false}});
     QObject::connect(&engine, &QQmlApplicationEngine::objectCreated, &windowsIntegration,
-                     [&windowsIntegration](QObject *object, const QUrl &) {
+                     [&windowsIntegration, startMinimized](QObject *object, const QUrl &) {
         if (auto *window = qobject_cast<QWindow *>(object)) {
             windowsIntegration.setWindow(window);
-            window->show();
+            startMinimized ? window->showMinimized() : window->show();
         }
     });
 #endif

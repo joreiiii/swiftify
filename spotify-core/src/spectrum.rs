@@ -25,6 +25,9 @@ use crate::{
     output::open_stereo_stream,
 };
 
+/// both channels the same (spotify's mono audio setting)
+pub(crate) static MONO: AtomicBool = AtomicBool::new(false);
+
 pub(crate) const BAND_COUNT: usize = 48;
 
 // cava's dual-window frequency analysis:
@@ -558,7 +561,15 @@ impl Sink for SpectrumSink {
             .map_err(|error| SinkError::OnWrite(error.to_string()))?;
         // before the tap, so the visualizer shows what the speakers get
         // rather than what the decoder produced.
-        let samples = self.dsp.process(converter.f64_to_f32(samples));
+        let mut samples = self.dsp.process(converter.f64_to_f32(samples));
+        // spotify's mono audio: both speakers play the same
+        if MONO.load(Ordering::Relaxed) {
+            for frame in samples.chunks_exact_mut(2) {
+                let both = (frame[0] + frame[1]) * 0.5;
+                frame[0] = both;
+                frame[1] = both;
+            }
+        }
         let Some(output) = &self.output else {
             return Err(SinkError::ConnectionRefused(
                 "no audio output device is available".to_owned(),

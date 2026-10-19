@@ -2,8 +2,9 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import Swiftify
 
-// the speaker button that slides out into a volume pill. a second click
-// mutes; moving away folds it back. the sleep timer's fade locks the slider.
+// the speaker button that slides out into a volume pill on hover. a click
+// mutes or unmutes; moving away folds it back. the sleep timer's fade locks
+// the slider.
 Item {
     id: root
 
@@ -36,9 +37,10 @@ Item {
             ElementMoveFastColor {}
         }
 
+        // hovering opens the slider, leaving folds it back
         HoverHandler {
             id: pillHover
-            onHoveredChanged: if (!hovered) root.expanded = false
+            onHoveredChanged: root.expanded = hovered
         }
 
         StyledSlider {
@@ -51,7 +53,8 @@ Item {
             opacity: root.expanded && pill.width > 100 ? 1 : 0
             visible: opacity > 0
             scheme: root.scheme
-            trackThickness: 8
+            trackThickness: 4
+            dotHandle: true
             handleLength: 20
             showStopIndicator: false
             showValueTip: true
@@ -72,14 +75,8 @@ Item {
             iconSize: 20
             symbol: root.symbol
             iconColor: root.expanded ? root.scheme.primary : root.scheme.onSurfaceVariant
-            tooltip: root.expanded ? (Player.volume <= 0.01 ? "Unmute" : "Mute") : "Show Volume"
-            onClicked: {
-                if (root.expanded) {
-                    Player.toggleMute()
-                } else {
-                    root.expanded = true
-                }
-            }
+            tooltip: Player.volume <= 0.01 ? "Unmute" : "Mute"
+            onClicked: Player.toggleMute()
         }
     }
 }

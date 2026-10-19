@@ -20,8 +20,15 @@ Item {
     readonly property bool titleFits: nowPlaying.width - artwork.width - 8 >= 48
     readonly property bool showsMeter: !compact && Settings.visualizersEnabled && Player.hasSong
     property bool progressExpanded: seek.expanded
+    /// laid out as spotify's bar (Settings.spotifyPlayerLayout): the song on
+    /// the left, the controls over the seek line in the middle. a narrow
+    /// window keeps swiftify's, which fits
+    readonly property bool spotify: Settings.spotifyPlayerLayout && !compact
+    /// spotify's middle: two fifths of the bar, within reason, whatever
+    /// the transport is doing
+    readonly property real centerWidth: Math.max(260, Math.min(width * 0.4, 680))
 
-    implicitHeight: tiny ? 56 : 64
+    implicitHeight: spotify ? 72 : (tiny ? 56 : 64)
     opacity: Window.active ? 1 : 0.82
 
     Behavior on opacity {
@@ -57,9 +64,10 @@ Item {
     Row {
         id: transport
         objectName: "playerTransport"
-        anchors.left: parent.left
-        anchors.leftMargin: root.compact ? 8 : 12
-        anchors.verticalCenter: parent.verticalCenter
+        // placed rather than anchored: anchors swapped by a binding as the
+        // layout changes could end up set together, and stuck that way
+        x: root.spotify ? Math.round((root.width - width) / 2) : (root.compact ? 8 : 12)
+        y: root.spotify ? 12 : Math.round((root.height - height) / 2)
         spacing: root.tiny ? 0 : 4
 
         TransportButton {
@@ -94,7 +102,7 @@ Item {
 
         PlayButton {
             anchors.verticalCenter: parent.verticalCenter
-            implicitWidth: root.tiny ? 36 : (root.compact ? 40 : 44)
+            implicitWidth: root.spotify || root.tiny ? 36 : (root.compact ? 40 : 44)
             implicitHeight: implicitWidth
             enabled: Player.hasSong
             color: root.scheme.primary
@@ -137,9 +145,9 @@ Item {
     Item {
         id: nowPlaying
         objectName: "playerNowPlaying"
-        anchors.left: transport.right
-        anchors.leftMargin: root.innerGap
-        anchors.right: utilities.left
+        anchors.left: root.spotify ? parent.left : transport.right
+        anchors.leftMargin: root.spotify ? 12 : root.innerGap
+        anchors.right: root.spotify ? center.left : utilities.left
         anchors.rightMargin: root.innerGap
         anchors.top: parent.top
         anchors.bottom: parent.bottom
@@ -149,8 +157,8 @@ Item {
             id: artwork
             anchors.left: parent.left
             anchors.verticalCenter: parent.verticalCenter
-            anchors.verticalCenterOffset: -4
-            width: root.tiny ? 30 : 40
+            anchors.verticalCenterOffset: root.spotify ? 0 : -4
+            width: root.spotify ? 48 : (root.tiny ? 30 : 40)
             height: width
             z: 2
             // a new song's cover pops in with a spring
@@ -245,30 +253,28 @@ Item {
             visible: root.titleFits
             clip: true
 
-            // the song fades back behind the seek line's times while the line
-            // is hovered, so they read; nothing moves or blurs
-            opacity: root.progressExpanded ? 0.12 : 1
-
-            Behavior on opacity {
-                NumberAnimation { duration: Appearance.duration(160); easing.type: Easing.OutCubic }
-            }
-
             anchors.left: artwork.right
-            anchors.leftMargin: 8
+            anchors.leftMargin: root.spotify ? 12 : 8
             anchors.right: root.showsMeter ? meter.left : parent.right
             anchors.rightMargin: root.showsMeter ? 9 : 0
             anchors.top: parent.top
-            anchors.topMargin: 7
-            anchors.bottom: seek.top
+            anchors.topMargin: root.spotify ? 0 : 7
+            anchors.bottom: root.spotify ? parent.bottom : seek.top
 
             Column {
+                id: titles
                 anchors.left: parent.left
-                anchors.right: more.visible ? more.left : parent.right
+                // spotify's save check sits right after the names
+                width: root.spotify
+                       ? Math.min(Math.max(titleMetrics.advanceWidth, artistMetrics.advanceWidth) + 2,
+                                  parent.width - (saveButton.visible ? saveButton.width + 8 : 0))
+                       : (more.visible ? more.x - 4 : parent.width)
                 anchors.rightMargin: more.visible ? 4 : 0
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: 1
 
                 TitleText {
+                    id: titleText
                     width: parent.width
                     text: Player.hasSong ? Player.currentSong.name : "Not Playing"
                     elide: Text.ElideRight
@@ -313,6 +319,7 @@ Item {
                     }
                 }
                 StyledText {
+                    id: artistText
                     width: parent.width
                     text: Player.hasSong ? Player.currentSong.artists : "Choose something to play"
                     elide: Text.ElideRight
@@ -321,11 +328,40 @@ Item {
                 }
             }
 
+            // the names' own widths, for the save check after them
+            TextMetrics {
+                id: titleMetrics
+                font: titleText.font
+                text: titleText.text
+            }
+            TextMetrics {
+                id: artistMetrics
+                font: artistText.font
+                text: artistText.text
+            }
+
+            IconButton {
+                id: saveButton
+                readonly property bool saved: Library.savedRevision >= 0 && Library.isSaved(Player.currentSong.uri)
+                anchors.left: titles.right
+                anchors.leftMargin: 8
+                anchors.verticalCenter: parent.verticalCenter
+                visible: root.spotify && Player.hasSong && !Player.currentSong.isLocalFile
+                scheme: root.scheme
+                symbol: saved ? "check_circle" : "add_circle"
+                toggled: saved
+                size: 28
+                iconSize: 18
+                iconColor: saved ? root.scheme.primary : root.scheme.onSurfaceVariant
+                tooltip: saved ? "Remove from Favourite Songs" : "Save to Favourite Songs"
+                onClicked: Library.toggleSaved(Player.currentSong)
+            }
+
             IconButton {
                 id: more
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
-                Reveal.shown: Player.hasSong && !root.compact
+                Reveal.shown: Player.hasSong && !root.compact && !root.spotify
                 scheme: root.scheme
                 symbol: "more_horiz"
                 size: 28
@@ -349,6 +385,7 @@ Item {
         // a song stay clickable
         SeekBar {
             id: seek
+            visible: !root.spotify
 
             anchors.left: root.titleFits ? artwork.right : parent.left
             anchors.leftMargin: root.titleFits ? 8 : 0
@@ -360,36 +397,49 @@ Item {
             scheme: root.scheme
         }
 
-        // the times show over the song while the seek line is hovered
-        Row {
-            anchors.left: seek.left
-            anchors.right: seek.right
-            anchors.bottom: seek.top
-            anchors.bottomMargin: 3
-            opacity: root.progressExpanded ? 1 : 0
-            visible: opacity > 0
+    }
 
-            Behavior on opacity {
-                NumberAnimation { duration: Appearance.duration(160) }
-            }
+    // spotify's middle: the times either side of the seek line, under the
+    // controls
+    Item {
+        id: center
+        visible: root.spotify
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.bottom: parent.bottom
+        anchors.bottomMargin: 5
+        width: root.centerWidth
+        height: 18
 
-            StyledText {
-                width: parent.width / 2
-                text: Format.playbackTime(seek.displayPositionMs)
-                tabularNumbers: true
-                font.pixelSize: Appearance.fontSize.smallest
-                font.weight: Font.Medium
-                color: root.scheme.onSurface
-            }
-            StyledText {
-                width: parent.width / 2
-                horizontalAlignment: Text.AlignRight
-                text: "−" + Format.playbackTime(Math.max(seek.durationMs - seek.displayPositionMs, 0))
-                tabularNumbers: true
-                font.pixelSize: Appearance.fontSize.smallest
-                font.weight: Font.Medium
-                color: root.scheme.onSurface
-            }
+        StyledText {
+            id: elapsed
+            anchors.left: parent.left
+            anchors.verticalCenter: parent.verticalCenter
+            width: 40
+            horizontalAlignment: Text.AlignRight
+            text: Format.playbackTime(centerSeek.displayPositionMs)
+            tabularNumbers: true
+            font.pixelSize: Appearance.fontSize.smallest
+            color: root.scheme.onSurfaceVariant
+        }
+        SeekBar {
+            id: centerSeek
+            anchors.left: elapsed.right
+            anchors.leftMargin: 8
+            anchors.right: total.left
+            anchors.rightMargin: 8
+            anchors.verticalCenter: parent.verticalCenter
+            height: 18
+            scheme: root.scheme
+        }
+        StyledText {
+            id: total
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            width: 40
+            text: Format.playbackTime(centerSeek.durationMs)
+            tabularNumbers: true
+            font.pixelSize: Appearance.fontSize.smallest
+            color: root.scheme.onSurfaceVariant
         }
     }
 
@@ -406,9 +456,11 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             scheme: root.scheme
             id: nowPlayingButton
+            enabled: UiState.nowPlayingAvailable
+            opacity: enabled ? 1 : 0.38
             size: root.buttonSize
             iconSize: root.tiny ? 18 : 20
-            toggled: Player.showingNowPlaying
+            toggled: Player.showingNowPlaying && enabled
             tooltip: "Now Playing View"
             onClicked: Player.toggleNowPlayingPanel()
 
@@ -423,9 +475,11 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             scheme: root.scheme
             id: lyricsButton
+            enabled: UiState.lyricsAvailable
+            opacity: enabled ? 1 : 0.38
             size: root.buttonSize
             iconSize: root.tiny ? 18 : 20
-            toggled: Player.showingLyrics
+            toggled: Player.showingLyrics && enabled
             tooltip: "Lyrics"
             onClicked: Player.toggleLyricsPanel()
 
@@ -440,9 +494,11 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             scheme: root.scheme
             id: queueButton
+            enabled: UiState.queueAvailable
+            opacity: enabled ? 1 : 0.38
             size: root.buttonSize
             iconSize: root.tiny ? 18 : 20
-            toggled: Player.showingQueue
+            toggled: Player.showingQueue && enabled
             tooltip: "Playing Next"
             onClicked: Player.toggleQueuePanel()
 

@@ -15,12 +15,18 @@ T.Slider {
     property color inactiveColor: scheme.secondaryContainer
     property color handleColor: activeColor
     property bool showStopIndicator: true
+    /// spotify's slider: one unbroken track, and a round dot on it while
+    /// hovered or dragged, rather than a slim handle splitting it
+    property bool dotHandle: false
+    property real dotSize: 12
     property bool showValueTip: false
     property string valueText: Math.round(position * 100) + "%"
     readonly property real trackLength: horizontal ? availableWidth : availableHeight
     readonly property real handleThickness: pressed ? 2 : 4
     readonly property real handleAt: visualPosition * trackLength
     readonly property real gap: 4
+    /// how far each part of the track stops short of the handle
+    readonly property real split: dotHandle ? 0 : gap + handleThickness / 2
     readonly property real outerRadius: Math.min(trackThickness / 2, 8)
 
     implicitWidth: horizontal ? 200 : handleLength
@@ -37,8 +43,8 @@ T.Slider {
 
         // the filled part runs from the start (left, or bottom) to the handle
         Rectangle {
-            readonly property real length: Math.max(0, root.horizontal ? root.handleAt - root.gap - root.handleThickness / 2
-                                                                       : root.trackLength - root.handleAt - root.gap - root.handleThickness / 2)
+            readonly property real length: Math.max(0, root.horizontal ? root.handleAt - root.split
+                                                                       : root.trackLength - root.handleAt - root.split)
             visible: length > 0.5
             color: root.activeColor
             x: root.horizontal ? 0 : (parent.width - root.trackThickness) / 2
@@ -53,9 +59,9 @@ T.Slider {
 
         Rectangle {
             id: inactiveTrack
-            readonly property real start: root.horizontal ? root.handleAt + root.gap + root.handleThickness / 2 : 0
+            readonly property real start: root.horizontal ? root.handleAt + root.split : 0
             readonly property real length: Math.max(0, root.horizontal ? root.trackLength - start
-                                                                       : root.handleAt - root.gap - root.handleThickness / 2)
+                                                                       : root.handleAt - root.split)
             visible: length > 0.5
             color: root.inactiveColor
             x: root.horizontal ? start : (parent.width - root.trackThickness) / 2
@@ -82,10 +88,16 @@ T.Slider {
     handle: Rectangle {
         x: root.leftPadding + (root.horizontal ? root.handleAt - width / 2 : (root.availableWidth - width) / 2)
         y: root.topPadding + (root.horizontal ? (root.availableHeight - height) / 2 : root.handleAt - height / 2)
-        width: root.horizontal ? root.handleThickness : root.handleLength
-        height: root.horizontal ? root.handleLength : root.handleThickness
+        width: root.dotHandle ? root.dotSize : root.horizontal ? root.handleThickness : root.handleLength
+        height: root.dotHandle ? root.dotSize : root.horizontal ? root.handleLength : root.handleThickness
         radius: Appearance.rounding.full
-        color: root.handleColor
+        color: root.dotHandle ? "white" : root.handleColor
+        // the dot shows while the slider is hovered or dragged
+        scale: !root.dotHandle || root.hovered || root.pressed ? 1 : 0
+
+        Behavior on scale {
+            NumberAnimation { duration: Appearance.motion(140); easing.type: Easing.OutCubic }
+        }
 
         Behavior on width {
             ElementMoveFast {}

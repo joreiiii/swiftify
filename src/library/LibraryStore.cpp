@@ -4,6 +4,7 @@
 #include "app/Settings.h"
 #include "core/PlaybackCore.h"
 #include "library/LocalLibrary.h"
+#include "playback/DjNarrator.h"
 #include "playback/PlaybackController.h"
 #include "spotify/SpotifyJson.h"
 #include "spotify/SpotifySession.h"
@@ -17,6 +18,7 @@
 #include <QJsonDocument>
 #include <QLoggingCategory>
 #include <QQmlEngine>
+#include <QScopeGuard>
 #include <QCoroTimer>
 
 #include <algorithm>
@@ -41,7 +43,7 @@ const QString kPinnedKey = QStringLiteral("pinnedPlaylistIDs");
 const QString kSearchHistoryKey = QStringLiteral("searchPlaybackHistory");
 /// the saved songs' file in the song list cache: no playlist id looks like it
 const QString kSavedSongsCacheKey = QStringLiteral("saved-songs");
-const QString kCatchphrase = QStringLiteral("i mean i guess bro");
+const QString kCatchphrase = QStringLiteral("swiftify (modded) by jorei_");
 const QString kReconnectToEdit = QStringLiteral("Reconnect your library once to create and edit playlists.");
 constexpr int kSearchHistoryLimit = 20;
 
@@ -101,6 +103,7 @@ bool LibraryStore::Destination::operator==(const Destination &other) const
     case Page::Album: return album.id == other.album.id;
     case Page::Artist: return artist.id == other.artist.id;
     case Page::Radio: return radioSeed.uri == other.radioSeed.uri;
+    case Page::Genre: return genreUri == other.genreUri;
     default: return true;
     }
 }
@@ -179,44 +182,6 @@ void LibraryStore::attachPlayer(PlaybackController *player)
     connect(player, &PlaybackController::playedFromSearch, this, &LibraryStore::recordSearchPlayback);
 }
 
-QCoro::Task<QHash<QString, QStringList>> LibraryStore::genresOf(QStringList artistIds)
-{
-    QStringList missing;
-    for (const QString &id : artistIds) {
-        if (!id.isEmpty() && !m_artistGenres.contains(id) && !missing.contains(id)) {
-            missing.append(id);
-        }
-    }
-    if (!missing.isEmpty() && !m_genresUnavailable && m_session->hasLibraryToken()) {
-        bool anyGenre = false;
-        try {
-            for (qsizetype start = 0; start < missing.size(); start += 50) {
-                const QStringList batch = missing.mid(start, 50);
-                const QHash<QString, QStringList> found = co_await m_session->withLibraryAccessToken<QHash<QString, QStringList>>(
-                    [this, batch](QString accessToken) { return m_session->webApi().artistGenres(batch, accessToken); });
-                for (const QString &id : batch) {
-                    const QStringList genres = found.value(id);
-                    anyGenre = anyGenre || !genres.isEmpty();
-                    m_artistGenres.insert(id, genres);
-                }
-            }
-            // spotify gives development apps no genres at all: stop asking
-            if (!anyGenre && missing.size() >= 10) {
-                m_genresUnavailable = true;
-            }
-        } catch (const Cancelled &) {
-        } catch (const SpotifyError &error) {
-            qCWarning(lcLibrary).noquote() << "artist genres:" << error.message();
-            m_genresUnavailable = true;
-        }
-    }
-    QHash<QString, QStringList> result;
-    for (const QString &id : artistIds) {
-        result.insert(id, m_artistGenres.value(id));
-    }
-    co_return result;
-}
-
 void LibraryStore::loadArtistCard(const QString &artistId)
 {
     if (artistId.isEmpty() || m_artistCard.value(QStringLiteral("id")).toString() == artistId) {
@@ -253,6 +218,149 @@ QCoro::Task<> LibraryStore::runArtistCard(QString artistId)
     }
 }
 
+void LibraryStore::loadSongExtras(const QString &trackUri, const QString &artistId)
+{
+    if (!trackUri.startsWith(QLatin1StringView("spotify:track:")) || trackUri == m_songExtrasUri) {
+        return;
+    }
+    m_songExtrasUri = trackUri;
+    m_songExtras.clear();
+    emit songExtrasChanged();
+    detach([](LibraryStore *self, QString uri, QString artist) -> QCoro::Task<> {
+        try {
+            const QJsonObject request {{QStringLiteral("op"), QStringLiteral("extras")},
+                                       {QStringLiteral("uri"), uri},
+                                       {QStringLiteral("artist"), QStringLiteral("spotify:artist:") + artist}};
+            const QString answer = co_await self->m_session->core()->libraryJson(QJsonDocument(request).toJson(QJsonDocument::Compact));
+            // a later song's extras win
+            if (self->m_songExtrasUri == uri) {
+                self->m_songExtras = QJsonDocument::fromJson(answer.toUtf8()).object().toVariantMap();
+                emit self->songExtrasChanged();
+            }
+        } catch (const SpotifyError &error) {
+            qCWarning(lcLibrary).noquote() << "song extras:" << error.message();
+        }
+    }(this, trackUri, artistId));
+}
+
+// --- browse: spotify's categories and their pages (browse.rs) ---------------------------
+
+void LibraryStore::loadBrowse()
+{
+    if (!m_genres.isEmpty()) {
+        return;
+    }
+    detach([](LibraryStore *self) -> QCoro::Task<> {
+        try {
+            co_await self->m_session->ensureFreshPlaybackConnection();
+            const QJsonObject answer = QJsonDocument::fromJson(
+                (co_await self->m_session->core()->libraryJson(QByteArrayLiteral(R"({"op":"browseAll"})"))).toUtf8()).object();
+            QVariantList genres;
+            for (const QJsonValue &value : answer.value(QStringLiteral("categories")).toArray()) {
+                genres.append(value.toObject().toVariantMap());
+            }
+            self->m_genres = genres;
+            emit self->genresChanged();
+        } catch (const SpotifyError &error) {
+            qCWarning(lcLibrary).noquote() << "browse:" << error.message();
+        }
+    }(this));
+}
+
+void LibraryStore::showGenre(const QString &uri, const QString &title, const QString &color)
+{
+    if (uri.isEmpty()) {
+        return;
+    }
+    cancelDetailLoads();
+    Destination destination {Page::Genre};
+    destination.genreUri = uri;
+    navigate(destination);
+    m_genre = {{QStringLiteral("uri"), uri}, {QStringLiteral("title"), title}, {QStringLiteral("color"), color},
+               {QStringLiteral("sections"), QVariantList {}}};
+    m_loadingGenre = true;
+    emit genreChanged();
+    detach(runGenreLoad(uri));
+}
+
+QCoro::Task<> LibraryStore::runGenreLoad(QString uri)
+{
+    QVariantList sections;
+    QString title;
+    QString color;
+    try {
+        co_await m_session->ensureFreshPlaybackConnection();
+        const QJsonObject request {{QStringLiteral("op"), QStringLiteral("browsePage")}, {QStringLiteral("uri"), uri}};
+        const QJsonObject page = QJsonDocument::fromJson(
+            (co_await m_session->core()->libraryJson(QJsonDocument(request).toJson(QJsonDocument::Compact))).toUtf8()).object();
+        title = page.value(QStringLiteral("title")).toString();
+        color = page.value(QStringLiteral("color")).toString();
+        for (const QJsonValue &sectionValue : page.value(QStringLiteral("sections")).toArray()) {
+            const QJsonObject section = sectionValue.toObject();
+            QVariantList items;
+            for (const QJsonValue &value : section.value(QStringLiteral("items")).toArray()) {
+                const QJsonObject card = value.toObject();
+                const QString type = card.value(QStringLiteral("type")).toString();
+                const QJsonObject item = card.value(QStringLiteral("item")).toObject();
+                if (type == QLatin1StringView("playlist")) {
+                    const Playlist playlist = json::playlist(item);
+                    if (playlist.isValid()) {
+                        items.append(QVariantMap {{QStringLiteral("kind"), type}, {QStringLiteral("name"), playlist.name},
+                                                  {QStringLiteral("subtitle"), playlist.description.isEmpty() ? playlist.ownerDisplayName() : playlist.description},
+                                                  {QStringLiteral("artworkUrl"), playlist.artworkUrl},
+                                                  {QStringLiteral("playlist"), QVariant::fromValue(playlist)}});
+                    }
+                } else if (type == QLatin1StringView("album")) {
+                    if (const auto album = json::album(item)) {
+                        items.append(QVariantMap {{QStringLiteral("kind"), type}, {QStringLiteral("name"), album->name},
+                                                  {QStringLiteral("subtitle"), album->artists},
+                                                  {QStringLiteral("artworkUrl"), album->artworkUrl},
+                                                  {QStringLiteral("album"), QVariant::fromValue(*album)}});
+                    }
+                } else if (type == QLatin1StringView("artist")) {
+                    if (const auto artist = json::artist(item)) {
+                        items.append(QVariantMap {{QStringLiteral("kind"), type}, {QStringLiteral("name"), artist->name},
+                                                  {QStringLiteral("subtitle"), QStringLiteral("Artist")},
+                                                  {QStringLiteral("artworkUrl"), artist->artworkUrl},
+                                                  {QStringLiteral("artist"), QVariant::fromValue(*artist)}});
+                    }
+                } else if (type == QLatin1StringView("category")) {
+                    items.append(QVariantMap {{QStringLiteral("kind"), type},
+                                              {QStringLiteral("name"), item.value(QStringLiteral("title")).toString()},
+                                              {QStringLiteral("uri"), item.value(QStringLiteral("uri")).toString()},
+                                              {QStringLiteral("color"), item.value(QStringLiteral("color")).toString()},
+                                              {QStringLiteral("artworkUrl"), item.value(QStringLiteral("image")).toString()}});
+                } else if (type == QLatin1StringView("show") || type == QLatin1StringView("episode")) {
+                    items.append(QVariantMap {{QStringLiteral("kind"), type},
+                                              {QStringLiteral("name"), item.value(QStringLiteral("name")).toString()},
+                                              {QStringLiteral("subtitle"), item.value(QStringLiteral("subtitle")).toString()},
+                                              {QStringLiteral("uri"), item.value(QStringLiteral("uri")).toString()},
+                                              {QStringLiteral("artworkUrl"), item.value(QStringLiteral("image")).toString()}});
+                }
+            }
+            if (!items.isEmpty()) {
+                sections.append(QVariantMap {{QStringLiteral("title"), section.value(QStringLiteral("title")).toString()},
+                                             {QStringLiteral("items"), items}});
+            }
+        }
+    } catch (const SpotifyError &error) {
+        qCWarning(lcLibrary).noquote() << "genre page:" << error.message();
+    }
+    // a page left meanwhile keeps what the newer one has
+    if (m_destination.page != Page::Genre || m_destination.genreUri != uri) {
+        co_return;
+    }
+    if (!title.isEmpty()) {
+        m_genre.insert(QStringLiteral("title"), title);
+    }
+    if (!color.isEmpty()) {
+        m_genre.insert(QStringLiteral("color"), color);
+    }
+    m_genre.insert(QStringLiteral("sections"), sections);
+    m_loadingGenre = false;
+    emit genreChanged();
+}
+
 void LibraryStore::playTrackUri(const QString &uri)
 {
     if (uri.startsWith(QLatin1StringView("spotify:track:"))) {
@@ -272,6 +380,99 @@ QCoro::Task<> LibraryStore::runPlayTrackUri(QString uri)
     } catch (const Cancelled &) {
     } catch (const SpotifyError &error) {
         reportError(QStringLiteral("Playing the song"), error.message());
+    }
+}
+
+void LibraryStore::playPlaylist(const Playlist &playlist)
+{
+    if (playlist.isValid()) {
+        detach(runPlayPlaylist(playlist));
+    }
+}
+
+void LibraryStore::playArtist(const Artist &artist)
+{
+    if (artist.isValid()) {
+        detach(runPlayArtist(artist));
+    }
+}
+
+QCoro::Task<> LibraryStore::runPlayPlaylist(Playlist playlist)
+{
+    try {
+        QList<Song> songs;
+        if (playlist.isDj) {
+            // the dj is no list of songs: spotify picks them as it starts,
+            // with what the dj says around them (DjNarrator)
+            co_await m_session->ensureFreshPlaybackConnection();
+            // it goes on from where it got to last time, as spotify's does
+            const QString djNext = QStringLiteral("djNextSegment");
+            const QJsonObject request {{QStringLiteral("op"), QStringLiteral("dj")},
+                                       {QStringLiteral("from"), m_settings->value(djNext).toString()}};
+            const QJsonObject set = QJsonDocument::fromJson(
+                (co_await m_session->core()->libraryJson(QJsonDocument(request).toJson(QJsonDocument::Compact))).toUtf8()).object();
+            m_settings->setValue(djNext, set.value(QStringLiteral("next")).toString());
+            QHash<QString, DjNarrator::Lines> lines;
+            for (const QJsonValue &value : set.value(QStringLiteral("items")).toArray()) {
+                const QJsonObject entry = value.toObject();
+                if (const auto song = json::wrappedTrack(entry)) {
+                    songs.append(*song);
+                    const auto line = [&entry](const char *part) {
+                        const QJsonObject spoken = entry.value(QLatin1StringView(part)).toObject();
+                        return DjNarrator::Line {spoken.value(QStringLiteral("text")).toString(),
+                                                 spoken.value(QStringLiteral("ssml")).toString(),
+                                                 spoken.value(QStringLiteral("voice")).toInt(),
+                                                 spoken.value(QStringLiteral("provider")).toInt(),
+                                                 spoken.value(QStringLiteral("sampleRate")).toInt(44100)};
+                    };
+                    lines.insert(song->uri, {line("intro"), line("outro")});
+                }
+            }
+            if (m_player && !songs.isEmpty()) {
+                if (!m_dj) {
+                    m_dj = new DjNarrator(m_player, m_session->core(), this);
+                }
+                m_dj->start(std::move(lines), set.value(QStringLiteral("language")).toString());
+            }
+        } else {
+            songs = co_await m_session->withLibraryAccessToken<QList<Song>>(
+                [this, id = playlist.id](QString accessToken) { return m_session->webApi().playlistSongs(id, accessToken); });
+        }
+        if (songs.isEmpty()) {
+            throw SpotifyError::requestFailed(QStringLiteral("There is nothing in it to play."));
+        }
+        m_quickPlaySongs->setSongs(songs);
+        if (m_player) {
+            m_player->playFromModel(m_quickPlaySongs, 0);
+        }
+    } catch (const Cancelled &) {
+    } catch (const SpotifyError &error) {
+        reportError(QStringLiteral("Playing the playlist"), error.message());
+    }
+}
+
+QCoro::Task<> LibraryStore::runPlayArtist(Artist artist)
+{
+    try {
+        co_await m_session->ensureFreshPlaybackConnection();
+        const QString uri = artist.uri.isEmpty() ? QStringLiteral("spotify:artist:") + artist.id : artist.uri;
+        const QJsonObject page = QJsonDocument::fromJson((co_await m_session->core()->artistJson(uri)).toUtf8()).object();
+        QList<Song> songs;
+        for (const QJsonValue &value : page.value(QStringLiteral("topTracks")).toObject().value(QStringLiteral("items")).toArray()) {
+            if (const auto song = json::wrappedTrack(value.toObject())) {
+                songs.append(*song);
+            }
+        }
+        if (songs.isEmpty()) {
+            throw SpotifyError::requestFailed(QStringLiteral("There is nothing of theirs to play."));
+        }
+        m_quickPlaySongs->setSongs(songs);
+        if (m_player) {
+            m_player->playFromModel(m_quickPlaySongs, 0);
+        }
+    } catch (const Cancelled &) {
+    } catch (const SpotifyError &error) {
+        reportError(QStringLiteral("Playing the artist"), error.message());
     }
 }
 
@@ -372,6 +573,40 @@ void LibraryStore::setPlaylistList(const QList<Playlist> &playlists)
     m_playlists->setItems(playlists);
     refreshPinnedPlaylists();
     emit selectedPlaylistChanged();
+}
+
+// every playlist's songs, read once in the background, so the search finds
+// a song in any of them and not only in the one open. a few at a time
+QCoro::Task<> LibraryStore::indexPlaylistsForSearch(QList<Playlist> playlists)
+{
+    constexpr qsizetype kAtOnce = 4;
+    const quint64 generation = m_session->generation();
+    QList<Song> index;
+    QSet<QString> seen;
+    for (qsizetype start = 0; start < playlists.size(); start += kAtOnce) {
+        std::vector<QCoro::Task<QString>> batch;
+        for (qsizetype at = start; at < std::min(playlists.size(), start + kAtOnce); ++at) {
+            if (!playlists.at(at).isDj && !playlists.at(at).isLocal()) {
+                batch.push_back(m_session->core()->playlistJson(playlists.at(at).uri));
+            }
+        }
+        for (auto &task : batch) {
+            try {
+                for (const Song &song : songsFromItems(co_await std::move(task))) {
+                    if (!seen.contains(song.uri)) {
+                        seen.insert(song.uri);
+                        index.append(song);
+                    }
+                }
+            } catch (const SpotifyError &error) {
+                qCInfo(lcLibrary).noquote() << "indexing a playlist for search:" << error.message();
+            }
+        }
+        if (generation != m_session->generation()) {
+            co_return;
+        }
+    }
+    m_searchIndex = index;
 }
 
 void LibraryStore::refreshPinnedPlaylists()
@@ -530,6 +765,7 @@ void LibraryStore::navigate(const Destination &destination)
         m_history.append(previous);
     }
     emit destinationChanged();
+    emit currentArtistChanged();
     emit selectedPlaylistChanged();
     emit playlistViewChanged();
 }
@@ -544,11 +780,14 @@ void LibraryStore::goBack()
     switch (destination.page) {
     case Page::Home: showHome(); break;
     case Page::Search: showSearch(); break;
+    case Page::Settings: showSettings(); break;
     case Page::Songs: showSavedSongs(); break;
     case Page::Playlists: showPlaylists(); break;
     case Page::PinnedPlaylists: showPinnedPlaylists(); break;
     case Page::Radio: showRadio(destination.radioSeed); break;
     case Page::Profile: showProfile(); break;
+    case Page::Genre: showGenre(destination.genreUri, m_genre.value(QStringLiteral("title")).toString(),
+                                m_genre.value(QStringLiteral("color")).toString()); break;
     case Page::LocalFiles: showLocalFiles(); break;
     case Page::LocalTracks: showLocalTracks(); break;
     case Page::Playlist: {
@@ -596,6 +835,12 @@ void LibraryStore::showSearch()
 {
     cancelDetailLoads();
     navigate({Page::Search});
+}
+
+void LibraryStore::showSettings()
+{
+    cancelDetailLoads();
+    navigate({Page::Settings});
 }
 
 void LibraryStore::showSavedSongs()
@@ -855,6 +1100,8 @@ QCoro::Task<> LibraryStore::runFriendActivity()
 
 QCoro::Task<> LibraryStore::loadFollowedArtists()
 {
+    // however it goes, the start no longer waits on it
+    const auto done = qScopeGuard([this] { markReady(m_followedLoadedOnce); });
     if (!m_session->hasLibraryToken() || m_session->libraryNeedsAuthorizationUpgrade()) {
         co_return;
     }
@@ -864,6 +1111,8 @@ QCoro::Task<> LibraryStore::loadFollowedArtists()
             [this](QString accessToken) { return m_session->webApi().followedArtists(accessToken); });
         if (generation == m_session->generation()) {
             m_followedArtists->setItems(artists);
+            // their pages open with their listeners
+            detach(prefetchListeners(artists));
         }
     } catch (const Cancelled &) {
     } catch (const SpotifyError &error) {
@@ -902,6 +1151,11 @@ void LibraryStore::selectPlaylistById(const QString &id)
 
 void LibraryStore::selectPlaylist(const Playlist &playlist)
 {
+    // the dj has no page of its own, as in spotify: it plays
+    if (playlist.isDj) {
+        playPlaylist(playlist);
+        return;
+    }
     cancelDetailLoads();
     m_playlistFilterQuery.clear();
     m_sortOrder = SortOrder::Playlist;
@@ -1016,6 +1270,104 @@ void LibraryStore::selectArtist(const Artist &artist)
     }
     setLoading(m_loadingArtist, opened == nullptr);
     detach(runArtistLoad(artist, m_artistLoad.renew()));
+    // known from before, it opens with the page; else it comes once spotify says
+    m_artistListeners = m_listenerCache.value(artist.id, 0);
+    emit artistListenersChanged();
+    detach(runArtistListeners(artist.id, artist.uri.isEmpty() ? QStringLiteral("spotify:artist:") + artist.id : artist.uri));
+}
+
+QCoro::Task<qint64> LibraryStore::fetchListeners(QString uri)
+{
+    co_await m_session->ensureFreshPlaybackConnection();
+    const QJsonObject request {{QStringLiteral("op"), QStringLiteral("listeners")}, {QStringLiteral("artist"), uri}};
+    const QJsonObject answer = QJsonDocument::fromJson(
+        (co_await m_session->core()->libraryJson(QJsonDocument(request).toJson(QJsonDocument::Compact))).toUtf8()).object();
+    co_return answer.value(QStringLiteral("monthlyListeners")).toInteger();
+}
+
+QCoro::Task<> LibraryStore::prefetchListeners(QList<Artist> artists)
+{
+    for (const Artist &artist : artists) {
+        if (artist.id.isEmpty() || m_listenerCache.contains(artist.id)) {
+            continue;
+        }
+        try {
+            const qint64 listeners = co_await fetchListeners(artist.uri.isEmpty() ? QStringLiteral("spotify:artist:") + artist.id : artist.uri);
+            if (listeners > 0) {
+                m_listenerCache.insert(artist.id, listeners);
+            }
+        } catch (const SpotifyError &) {
+            co_return;
+        }
+    }
+}
+
+QCoro::Task<> LibraryStore::runArtistListeners(QString artistId, QString uri)
+{
+    try {
+        const qint64 listeners = co_await fetchListeners(uri);
+        if (listeners > 0) {
+            m_listenerCache.insert(artistId, listeners);
+        }
+        // an artist left meanwhile keeps the newer one's
+        if (m_destination.page != Page::Artist || m_destination.artist.id != artistId || listeners == m_artistListeners) {
+            co_return;
+        }
+        m_artistListeners = listeners;
+        emit artistListenersChanged();
+    } catch (const SpotifyError &error) {
+        qCWarning(lcLibrary).noquote() << "listeners:" << error.message();
+    }
+}
+
+bool LibraryStore::isFollowing(const QString &artistId) const
+{
+    const QList<Artist> &followed = m_followedArtists->items();
+    return std::any_of(followed.begin(), followed.end(), [&](const Artist &item) { return item.id == artistId; });
+}
+
+void LibraryStore::toggleFollow(const Artist &artist)
+{
+    if (artist.id.isEmpty()) {
+        return;
+    }
+    const bool follow = !isFollowing(artist.id);
+    QList<Artist> followed = m_followedArtists->items();
+    if (follow) {
+        Artist added = artist;
+        // the newest in the library's recents
+        added.recency = QDateTime::currentMSecsSinceEpoch();
+        followed.prepend(added);
+    } else {
+        followed.removeIf([&](const Artist &item) { return item.id == artist.id; });
+    }
+    m_followedArtists->setItems(followed);
+    ++m_followRevision;
+    emit followedChanged();
+    detach(runToggleFollow(artist, follow));
+}
+
+QCoro::Task<> LibraryStore::runToggleFollow(Artist artist, bool follow)
+{
+    try {
+        co_await m_session->ensureFreshPlaybackConnection();
+        const QString uri = artist.uri.isEmpty() ? QStringLiteral("spotify:artist:") + artist.id : artist.uri;
+        const QJsonObject request {{QStringLiteral("op"), follow ? QStringLiteral("follow") : QStringLiteral("unfollow")},
+                                   {QStringLiteral("uris"), QJsonArray {uri}}};
+        co_await m_session->core()->libraryJson(QJsonDocument(request).toJson(QJsonDocument::Compact));
+    } catch (const SpotifyError &error) {
+        // spotify said no: the button goes back to what is true
+        QList<Artist> followed = m_followedArtists->items();
+        if (follow) {
+            followed.removeIf([&](const Artist &item) { return item.id == artist.id; });
+        } else {
+            followed.prepend(artist);
+        }
+        m_followedArtists->setItems(followed);
+        ++m_followRevision;
+        emit followedChanged();
+        reportError(follow ? QStringLiteral("Following ") + artist.name : QStringLiteral("Unfollowing ") + artist.name, error.message());
+    }
 }
 
 QCoro::Task<> LibraryStore::runArtistLoad(Artist artist, CancelToken token)
@@ -1049,7 +1401,8 @@ QCoro::Task<> LibraryStore::runArtistLoad(Artist artist, CancelToken token)
         const QJsonArray images = page.value(QStringLiteral("images")).toArray();
         if (m_destination.artist.artworkUrl.isEmpty() && !images.isEmpty()) {
             m_destination.artist.artworkUrl = QUrl(images.last().toObject().value(QStringLiteral("url")).toString());
-            emit destinationChanged();
+            // the picture alone: the page stays, rather than being made anew
+            emit currentArtistChanged();
         }
         m_artistTopSongs->setSongs(topSongs);
         m_artistAlbums->setItems(albums);
@@ -1136,6 +1489,8 @@ void LibraryStore::setSearchQuery(const QString &query)
         m_searchAlbums->setItems({});
         m_searchArtists->setItems({});
         m_searchPlaylists->setItems({});
+        m_searchOrder.clear();
+        m_searchTop.clear();
         setLoading(m_searching, false);
     };
     if (trimmed.isEmpty() || searchIsCatchphrase()) {
@@ -1149,13 +1504,238 @@ void LibraryStore::setSearchQuery(const QString &query)
     emit searchChanged();
 }
 
+// spotify's catalog search is out of reach of the one login, so the search
+// looks through what the person has: their saved and recent songs, the
+// playlist open, their playlists and the artists they follow, and the
+// albums of those songs. every word typed has to match. as spotify's, the
+// results are ranked: a name that is what was typed beats one that starts
+// with it, which beats one with a word that does, which beats one that only
+// has it somewhere; an artist edges ahead of the rest, and what was played or
+// added lately ahead of what was not. the best is the top result, and the
+// kinds come in the order of their best.
+LibraryStore::RankedResults LibraryStore::searchLibrary(const QString &query) const
+{
+    constexpr qsizetype kSongs = 20;
+    constexpr qsizetype kOthers = 10;
+    const QString typed = query.simplified();
+    const QStringList words = typed.split(u' ', Qt::SkipEmptyParts);
+    const auto matches = [&words](const QString &text) {
+        for (const QString &word : words) {
+            if (!text.contains(word, Qt::CaseInsensitive)) {
+                return false;
+            }
+        }
+        return !words.isEmpty();
+    };
+    // how well a name answers what was typed; `rest` is what else may match
+    const auto score = [&](const QString &name, const QString &rest) -> double {
+        if (name.compare(typed, Qt::CaseInsensitive) == 0) {
+            return 100;
+        }
+        if (name.startsWith(typed, Qt::CaseInsensitive)) {
+            return 80;
+        }
+        const QStringList nameWords = name.split(u' ', Qt::SkipEmptyParts);
+        for (const QString &word : nameWords) {
+            if (word.startsWith(words.value(0), Qt::CaseInsensitive) && matches(name)) {
+                return 60;
+            }
+        }
+        if (matches(name)) {
+            return 40;
+        }
+        return matches(name + u' ' + rest) ? 20 : -1;
+    };
+    // up to 10 more for what was played or added in the last month
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    const auto lately = [now](qint64 recency) -> double {
+        constexpr double kMonth = 30.0 * 24 * 3600 * 1000;
+        return recency > 0 ? std::max(0.0, 10.0 * (1.0 - double(now - recency) / kMonth)) : 0;
+    };
+
+    QList<std::pair<double, Song>> songs;
+    QList<std::pair<double, Album>> albums;
+    QList<std::pair<double, Artist>> artists;
+    QList<std::pair<double, Playlist>> playlists;
+
+    QSet<QString> seenSongs;
+    QSet<QString> seenAlbums;
+    QSet<QString> saved;
+    for (const Song &song : m_savedSongs->songs()) {
+        saved.insert(song.uri);
+    }
+    for (const QList<Song> *list : {&m_savedSongs->songs(), &m_recentlyPlayed->songs(), &m_songs, &m_searchIndex}) {
+        for (const Song &song : *list) {
+            if (!seenSongs.contains(song.uri)) {
+                seenSongs.insert(song.uri);
+                if (const double value = score(song.name, song.artists + u' ' + song.albumName); value >= 0) {
+                    songs.append({value + 2 + (saved.contains(song.uri) ? 4 : 0), song});
+                }
+            }
+            if (!song.albumId.isEmpty() && !seenAlbums.contains(song.albumId)) {
+                seenAlbums.insert(song.albumId);
+                if (const double value = score(song.albumName, song.artists); value >= 0) {
+                    Album album;
+                    album.id = song.albumId;
+                    album.uri = song.albumUri;
+                    album.name = song.albumName;
+                    album.artists = song.artists;
+                    album.artworkUrl = song.artworkUrl;
+                    albums.append({value, album});
+                }
+            }
+        }
+    }
+    for (const Artist &artist : m_followedArtists->items()) {
+        if (const double value = score(artist.name, {}); value >= 0) {
+            artists.append({value + 6 + lately(artist.recency), artist});
+        }
+    }
+    for (const Playlist &playlist : m_playlistList) {
+        if (const double value = score(playlist.name, playlist.description); value >= 0) {
+            playlists.append({value + 3 + lately(playlist.recency), playlist});
+        }
+    }
+
+    const auto best = [](auto &list) {
+        std::stable_sort(list.begin(), list.end(), [](const auto &a, const auto &b) { return a.first > b.first; });
+        return list.isEmpty() ? -1.0 : list.first().first;
+    };
+    const double bestSong = best(songs);
+    const double bestAlbum = best(albums);
+    const double bestArtist = best(artists);
+    const double bestPlaylist = best(playlists);
+
+    RankedResults results;
+    for (const auto &[value, song] : songs.mid(0, kSongs)) results.songs.append(song);
+    for (const auto &[value, album] : albums.mid(0, kOthers)) results.albums.append(album);
+    for (const auto &[value, artist] : artists.mid(0, kOthers)) results.artists.append(artist);
+    for (const auto &[value, playlist] : playlists.mid(0, kOthers)) results.playlists.append(playlist);
+
+    QList<std::pair<double, QString>> kinds {{bestSong, QStringLiteral("songs")},
+                                             {bestArtist, QStringLiteral("artists")},
+                                             {bestAlbum, QStringLiteral("albums")},
+                                             {bestPlaylist, QStringLiteral("playlists")}};
+    std::stable_sort(kinds.begin(), kinds.end(), [](const auto &a, const auto &b) { return a.first > b.first; });
+    for (const auto &[value, kind] : kinds) {
+        if (value >= 0) {
+            results.order.append(kind);
+        }
+    }
+
+    // the top result, the best of the best
+    if (!results.order.isEmpty()) {
+        const QString kind = results.order.first();
+        if (kind == QLatin1StringView("songs")) {
+            const Song &song = results.songs.first();
+            results.top = {{QStringLiteral("kind"), kind}, {QStringLiteral("name"), song.name},
+                           {QStringLiteral("subtitle"), song.artists}, {QStringLiteral("artworkUrl"), song.artworkUrl},
+                           {QStringLiteral("song"), QVariant::fromValue(song)}};
+        } else if (kind == QLatin1StringView("artists")) {
+            const Artist &artist = results.artists.first();
+            results.top = {{QStringLiteral("kind"), kind}, {QStringLiteral("name"), artist.name},
+                           {QStringLiteral("subtitle"), QStringLiteral("Artist")}, {QStringLiteral("artworkUrl"), artist.artworkUrl},
+                           {QStringLiteral("artist"), QVariant::fromValue(artist)}};
+        } else if (kind == QLatin1StringView("albums")) {
+            const Album &album = results.albums.first();
+            results.top = {{QStringLiteral("kind"), kind}, {QStringLiteral("name"), album.name},
+                           {QStringLiteral("subtitle"), QStringLiteral("Album  •  ") + album.artists},
+                           {QStringLiteral("artworkUrl"), album.artworkUrl},
+                           {QStringLiteral("album"), QVariant::fromValue(album)}};
+        } else {
+            const Playlist &playlist = results.playlists.first();
+            results.top = {{QStringLiteral("kind"), kind}, {QStringLiteral("name"), playlist.name},
+                           {QStringLiteral("subtitle"), QStringLiteral("Playlist  •  ") + playlist.ownerDisplayName()},
+                           {QStringLiteral("artworkUrl"), playlist.artworkUrl},
+                           {QStringLiteral("playlist"), QVariant::fromValue(playlist)}};
+        }
+    }
+    return results;
+}
+
+// spotify's catalog search (search.rs), as its web player searches: its own
+// top result first, then songs, artists, albums and playlists
+LibraryStore::RankedResults LibraryStore::catalogResults(const QJsonObject &answer) const
+{
+    const auto items = [&answer](const char *key) {
+        return answer.value(QLatin1StringView(key)).toObject().value(QStringLiteral("items")).toArray();
+    };
+    RankedResults results;
+    for (const QJsonValue &value : items("tracks")) {
+        if (const auto song = json::track(value.toObject())) results.songs.append(*song);
+    }
+    for (const QJsonValue &value : items("albums")) {
+        if (const auto album = json::album(value.toObject())) results.albums.append(*album);
+    }
+    for (const QJsonValue &value : items("artists")) {
+        if (const auto artist = json::artist(value.toObject())) results.artists.append(*artist);
+    }
+    for (const QJsonValue &value : items("playlists")) {
+        const Playlist playlist = json::playlist(value.toObject());
+        if (playlist.isValid()) results.playlists.append(playlist);
+    }
+
+    const QJsonObject top = answer.value(QStringLiteral("top")).toObject();
+    const QString topKind = top.value(QStringLiteral("kind")).toString();
+    const QString topUri = top.value(QStringLiteral("uri")).toString();
+    if (!results.songs.isEmpty()) results.order.append(QStringLiteral("songs"));
+    if (!results.artists.isEmpty()) results.order.append(QStringLiteral("artists"));
+    if (!results.albums.isEmpty()) results.order.append(QStringLiteral("albums"));
+    if (!results.playlists.isEmpty()) results.order.append(QStringLiteral("playlists"));
+
+    // spotify's top result, found among the results, and its kind first
+    const auto first = [&](auto &list, const QString &kind) -> bool {
+        for (qsizetype index = 0; index < list.size(); ++index) {
+            if (list.at(index).uri == topUri) {
+                list.move(index, 0);
+                results.order.removeAll(kind);
+                results.order.prepend(kind);
+                return true;
+            }
+        }
+        return false;
+    };
+    if (topKind == QLatin1StringView("tracks") && first(results.songs, QStringLiteral("songs"))) {
+        const Song &song = results.songs.first();
+        results.top = {{QStringLiteral("kind"), QStringLiteral("songs")}, {QStringLiteral("name"), song.name},
+                       {QStringLiteral("subtitle"), QStringLiteral("Song  •  ") + song.artists},
+                       {QStringLiteral("artworkUrl"), song.artworkUrl}, {QStringLiteral("song"), QVariant::fromValue(song)}};
+    } else if (topKind == QLatin1StringView("artists") && first(results.artists, QStringLiteral("artists"))) {
+        const Artist &artist = results.artists.first();
+        results.top = {{QStringLiteral("kind"), QStringLiteral("artists")}, {QStringLiteral("name"), artist.name},
+                       {QStringLiteral("subtitle"), QStringLiteral("Artist")}, {QStringLiteral("artworkUrl"), artist.artworkUrl},
+                       {QStringLiteral("artist"), QVariant::fromValue(artist)}};
+    } else if (topKind == QLatin1StringView("albums") && first(results.albums, QStringLiteral("albums"))) {
+        const Album &album = results.albums.first();
+        results.top = {{QStringLiteral("kind"), QStringLiteral("albums")}, {QStringLiteral("name"), album.name},
+                       {QStringLiteral("subtitle"), QStringLiteral("Album  •  ") + album.artists},
+                       {QStringLiteral("artworkUrl"), album.artworkUrl}, {QStringLiteral("album"), QVariant::fromValue(album)}};
+    } else if (topKind == QLatin1StringView("playlists") && first(results.playlists, QStringLiteral("playlists"))) {
+        const Playlist &playlist = results.playlists.first();
+        results.top = {{QStringLiteral("kind"), QStringLiteral("playlists")}, {QStringLiteral("name"), playlist.name},
+                       {QStringLiteral("subtitle"), QStringLiteral("Playlist  •  ") + playlist.ownerDisplayName()},
+                       {QStringLiteral("artworkUrl"), playlist.artworkUrl}, {QStringLiteral("playlist"), QVariant::fromValue(playlist)}};
+    }
+    return results;
+}
+
 QCoro::Task<> LibraryStore::runSearch(QString query, CancelToken token)
 {
     try {
         co_await QCoro::sleepFor(std::chrono::milliseconds(350));
         throwIfCancelled(token);
-        const SearchResults results = co_await m_session->withLibraryAccessToken<SearchResults>(
-            [this, query](QString accessToken) { return m_session->webApi().search(query, accessToken); });
+        // all of spotify, as its own apps search; the person's library if
+        // spotify will not answer
+        RankedResults results;
+        try {
+            co_await m_session->ensureFreshPlaybackConnection();
+            const QJsonObject request {{QStringLiteral("op"), QStringLiteral("search")}, {QStringLiteral("query"), query}};
+            results = catalogResults(QJsonDocument::fromJson(
+                (co_await m_session->core()->libraryJson(QJsonDocument(request).toJson(QJsonDocument::Compact))).toUtf8()).object());
+        } catch (const SpotifyError &error) {
+            qCWarning(lcLibrary).noquote() << "searching spotify:" << error.message();
+            results = searchLibrary(query);
+        }
         throwIfCancelled(token);
         if (m_searchQuery.trimmed() != query) {
             co_return;
@@ -1164,6 +1744,8 @@ QCoro::Task<> LibraryStore::runSearch(QString query, CancelToken token)
         m_searchAlbums->setItems(results.albums);
         m_searchArtists->setItems(results.artists);
         m_searchPlaylists->setItems(results.playlists);
+        m_searchOrder = results.order;
+        m_searchTop = results.top;
         setLoading(m_searching, false);
         emit searchChanged();
         m_search.finish(token);
@@ -1330,9 +1912,20 @@ QCoro::Task<> LibraryStore::loadSavedStatuses(QList<Song> songs)
 
 // --- loading ---------------------------------------------------------------------------
 
+void LibraryStore::markReady(bool &part)
+{
+    const bool was = isLibraryReady();
+    part = true;
+    if (isLibraryReady() != was) {
+        emit libraryReadyChanged();
+    }
+}
+
 QCoro::Task<> LibraryStore::loadInitialLibrary()
 {
     if (!m_session->hasLibraryToken()) {
+        m_followedLoadedOnce = true;
+        markReady(m_initialLoadDone);
         co_return;
     }
     if (!m_session->libraryNeedsAuthorizationUpgrade()) {
@@ -1350,6 +1943,9 @@ QCoro::Task<> LibraryStore::loadInitialLibrary()
     if (!m_session->libraryNeedsAuthorizationUpgrade()) {
         co_await loadHome();
     }
+    markReady(m_initialLoadDone);
+    // search's browse all, ready before search is opened
+    loadBrowse();
 }
 
 QCoro::Task<> LibraryStore::loadPlaylists()
@@ -1365,6 +1961,7 @@ QCoro::Task<> LibraryStore::loadPlaylists()
         setPlaylistList(playlists);
         m_session->setLibraryStatus(QStringLiteral("Connected"));
         detach(loadFollowedArtists());
+        detach(indexPlaylistsForSearch(playlists));
     } catch (const Cancelled &) {
     } catch (const SpotifyError &error) {
         reportError(QStringLiteral("Loading playlists"), error.message());
@@ -1954,6 +2551,7 @@ void LibraryStore::reset()
     m_searching = m_loadingArtist = m_savingPlaylist = false;
     emit loadingChanged();
     emit destinationChanged();
+    emit currentArtistChanged();
     emit selectedPlaylistChanged();
     emit searchChanged();
     emit savedChanged();

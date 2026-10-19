@@ -176,6 +176,11 @@ public:
     Q_INVOKABLE void seek(int positionMs);
     Q_INVOKABLE void seekBy(int offsetMs);
     Q_INVOKABLE void setVolume(double volume);
+    /// the output devices there are, the system's default first
+    Q_INVOKABLE QStringList outputDevices() const;
+    /// turns the music down to a share of the volume for a while, as under
+    /// the dj's voice, without touching the volume itself or what is saved
+    void setDucking(double share);
     Q_INVOKABLE void adjustVolume(double delta);
     Q_INVOKABLE void toggleMute();
     Q_INVOKABLE void toggleShuffle();
@@ -190,6 +195,10 @@ public:
     /// the system took the audio device away. stop, and rebuild the output
     /// only when someone presses play again.
     void invalidateAudioOutput();
+    /// the audio output built afresh, for settings that apply to a new one
+    /// (normalisation, the output device): at once while something plays,
+    /// going on where it was, or when play is next pressed
+    void rebuildAudioOutput();
     /// the machine is about to suspend
     void prepareForSleep();
 
@@ -244,6 +253,8 @@ private:
     void rebuildShuffledQueue(const std::optional<Song> &startingWith);
     std::optional<Song> nextQueueSong(bool allowWrap) const;
     void queueDidChange();
+    /// keeps the queue for the next start, with the last song
+    void rememberQueue();
     void preloadNextTrack();
     void syncMediaSession();
     void reset();
@@ -274,6 +285,13 @@ private:
     /// resume, an output rebuild. empty once it finished or was withdrawn.
     TaskSlot m_playbackRequest;
     bool m_playbackNeedsLoad = false;
+    /// where the song the player opened on was left, to go on from once played
+    quint32 m_restoredPositionMs = 0;
+    /// the position last kept for the next launch
+    quint32 m_savedPositionMs = 0;
+    bool m_restoredLyricsLoaded = false;
+    /// explicit songs skipped in a row, so a queue of nothing else ends
+    int m_explicitSkips = 0;
     bool m_audioOutputNeedsRestart = false;
     bool m_playing = false;
     bool m_loading = false;
@@ -288,6 +306,8 @@ private:
     QTimer m_pollTimer;
 
     double m_volume = 0.75;
+    /// the share of the volume played at: below 1 while the dj talks
+    double m_ducking = 1.0;
     double m_volumeBeforeMute = 0.75;
     bool m_shuffle = false;
     RepeatMode m_repeatMode = RepeatMode::Off;

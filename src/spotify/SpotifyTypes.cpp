@@ -23,6 +23,7 @@ QJsonObject Artist::toJson() const
         {QStringLiteral("name"), name},
         {QStringLiteral("artworkURL"), artworkUrl.toString()},
         {QStringLiteral("uri"), uri},
+        {QStringLiteral("recency"), recency},
     };
 }
 
@@ -33,6 +34,7 @@ Artist Artist::fromJson(const QJsonObject &object)
         object.value(QStringLiteral("name")).toString(),
         QUrl(object.value(QStringLiteral("artworkURL")).toString()),
         object.value(QStringLiteral("uri")).toString(),
+        object.value(QStringLiteral("recency")).toInteger(),
     };
 }
 

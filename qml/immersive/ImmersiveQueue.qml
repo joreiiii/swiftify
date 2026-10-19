@@ -23,7 +23,7 @@ Item {
         scheme: root.scheme
         symbol: "queue_music"
         title: "Queue Empty"
-        description: UiState.catchphrase
+        description: "Add songs to play next and they show up here."
     }
 
     ListView {

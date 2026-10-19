@@ -54,29 +54,44 @@ ListView {
             sourceComponent: root.hero
         }
 
-        // the filter chips, scrolling sideways when there are more than fit
-        Flickable {
-            x: root.margin
-            width: root.width - 2 * root.margin
-            height: visible ? 46 : 0
-            visible: root.filterable && filter.chips.length > 0 && !root.loading
-            contentWidth: chipRow.width
-            flickableDirection: Flickable.HorizontalFlick
-            boundsBehavior: Flickable.StopAtBounds
-            clip: true
+        // the filter chips, scrolling sideways when there are more than fit.
+        // their room is kept from the start, so nothing below moves when
+        // they come, and drawn up into the hero's bottom margin, nearer its
+        // cover; the chips fade in once their genres are known
+        Item {
+            width: root.width
+            height: root.filterable ? 24 : 0
+            visible: root.filterable
 
-            Row {
-                id: chipRow
-                spacing: 8
+            Flickable {
+                id: chipStrip
+                x: root.margin
+                y: -24
+                width: root.width - 2 * root.margin
+                height: 30
+                opacity: filter.chips.length > 0 && !root.loading ? 1 : 0
 
-                Repeater {
-                    model: filter.chips
+                Behavior on opacity {
+                    NumberAnimation { duration: Appearance.duration(260); easing.type: Easing.OutCubic }
+                }
+                contentWidth: chipRow.width
+                flickableDirection: Flickable.HorizontalFlick
+                boundsBehavior: Flickable.StopAtBounds
+                clip: true
 
-                    FilterChip {
-                        required property string modelData
-                        text: modelData
-                        checked: filter.active === modelData
-                        onClicked: filter.active = modelData
+                Row {
+                    id: chipRow
+                    spacing: 8
+
+                    Repeater {
+                        model: filter.chips
+
+                        FilterChip {
+                            required property string modelData
+                            text: modelData
+                            checked: filter.active === modelData
+                            onClicked: filter.active = modelData
+                        }
                     }
                 }
             }

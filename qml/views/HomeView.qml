@@ -1,7 +1,6 @@
 pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls.Basic
-import QtQuick.Effects
 import Swiftify
 
 // Listen Now (MusicHomeView)
@@ -12,12 +11,21 @@ Flickable {
     topMargin: Appearance.sizes.pageTop
 
     readonly property real margin: Appearance.sizes.pageMargin
-    readonly property bool hasSpotlight: Player.hasSong || Library.recentlyPlayed.count > 0
-    // at() is a call, which a binding cannot watch: the list announces its
-    // count with every new list, so reading that re-reads its first song
-    readonly property song spotlightSong: Player.hasSong ? Player.currentSong
-                                          : Library.recentlyPlayed.at(Library.recentlyPlayed.count > 0 ? 0 : -1)
-    readonly property bool spotlightIsCurrent: Player.hasSong && Player.currentSong.instanceId === spotlightSong.instanceId
+    /// spotify's quick access: favourite songs, then what was played or
+    /// added last, playlists and artists together, as the sidebar's recents
+    readonly property var quickEntries: {
+        const playlistCount = Library.playlists.count
+        const artistCount = Library.followedArtists.count
+        const rest = []
+        for (let index = 0; index < playlistCount; ++index) {
+            rest.push({ type: "playlist", index: index, recency: Library.playlists.at(index).recency })
+        }
+        for (let index = 0; index < artistCount; ++index) {
+            rest.push({ type: "artist", index: index, recency: Library.followedArtists.at(index).recency })
+        }
+        rest.sort((a, b) => b.recency - a.recency)
+        return [{ type: "liked", index: -1 }].concat(rest)
+    }
 
     contentHeight: column.implicitHeight + 24 + Appearance.sizes.playerBarClearance
     boundsBehavior: Flickable.StopAtBounds
@@ -29,21 +37,51 @@ Flickable {
         return top + height > root.contentY - slack && top < root.contentY + root.height + slack
     }
 
+    /// spotify's page for the genre, found among its categories by name;
+    /// a search for it where spotify has none by that name
     function openGenre(name: string) {
-        Library.searchQuery = name
-        Library.showSearch()
+        const plain = (text) => String(text).toLowerCase().replace(/[^a-z0-9]/g, "")
+        const wanted = plain(name)
+        const categories = Library.genres
+        let match = null
+        for (let index = 0; index < categories.length && !match; ++index) {
+            if (plain(categories[index].title) === wanted) {
+                match = categories[index]
+            }
+        }
+        for (let index = 0; index < categories.length && !match; ++index) {
+            const title = plain(categories[index].title)
+            if (title.startsWith(wanted) || wanted.startsWith(title)) {
+                match = categories[index]
+            }
+        }
+        // "Electronic" is spotify's "Dance/Electronic"
+        for (let index = 0; index < categories.length && !match; ++index) {
+            if (plain(categories[index].title).includes(wanted)) {
+                match = categories[index]
+            }
+        }
+        if (match) {
+            Library.showGenre(match.uri, match.title, match.color)
+        } else {
+            Library.searchQuery = name
+            Library.showSearch()
+        }
     }
 
     Genres {
         id: genres
     }
 
-    // a few faint shapes behind the page's heading
-    Stickers {
+    // a few faint covers floating behind the page's heading
+    FloatingCovers {
         width: root.width
         height: 260
         key: "home"
-        count: 5
+        // the covers of what was played last, as the quick access has them
+        covers: root.quickEntries.filter(entry => entry.type !== "liked").slice(0, 5).map(entry => entry.type === "artist"
+            ? { url: Library.followedArtists.at(entry.index).artworkUrl, circular: true }
+            : { url: Library.playlists.at(entry.index).artworkUrl, circular: false })
     }
 
     Column {
@@ -110,166 +148,47 @@ Flickable {
             }
         }
 
-        // the spotlight: what is playing, or what played last
-        Rectangle {
-            id: spotlight
-            readonly property bool stacked: width < 460
-            readonly property real inset: stacked ? 20 : 26
+        // quick access, as spotify's grid at the top of home
+        Grid {
+            id: quick
+            readonly property real gap: 8
             x: root.margin
             width: root.width - 2 * root.margin
-            height: stacked ? spotlightArt.height + spotlightDetails.implicitHeight + 3 * inset
-                            : Math.max(spotlightArt.height, spotlightDetails.implicitHeight) + 2 * inset
-            Reveal.shown: root.hasSpotlight && !(Library.loadingHome && Library.recentlyPlayed.count === 0)
-            radius: 22
-            color: Appearance.colors.surfaceContainerLow
-            border.width: 0.75
-            border.color: Qt.rgba(1, 1, 1, 0.09)
+            columns: width >= 760 ? 4 : 2
+            columnSpacing: gap
+            rowSpacing: gap
+            Reveal.shown: !(Library.loadingHome && Library.recentlyPlayed.count === 0)
 
-            TapHandler {
-                acceptedButtons: Qt.RightButton
-                onTapped: SongMenus.open(root.spotlightSong, false)
-            }
+            Repeater {
+                // three rows at most
+                model: root.quickEntries.slice(0, quick.columns * 3)
 
-            // the cover, blurred, poured behind the card, as end4's media
-            // controls do. drawn once a cover, not every frame, and at a
-            // quarter of the pixels: under a blur this wide the rest is
-            // never seen, and held on the gpu for as long as home is kept
-            Item {
-                id: spotlightBlurSource
-                anchors.fill: parent
-                visible: false
-                layer.enabled: true
-                layer.textureSize: Qt.size(Math.ceil(width / 2), Math.ceil(height / 2))
+                QuickTile {
+                    id: tile
+                    required property var modelData
+                    readonly property playlist playlist: Library.playlists.at(modelData.type === "playlist" ? modelData.index : -1)
+                    readonly property artist artist: Library.followedArtists.at(modelData.type === "artist" ? modelData.index : -1)
 
-                // a plain image: ArtworkImage draws through shader effects of
-                // its own hidden images, which a hidden layer leaves blank
-                Image {
-                    readonly property string cover: root.spotlightSong.artworkUrl.toString()
-
-                    anchors.fill: parent
-                    asynchronous: true
-                    fillMode: Image.PreserveAspectCrop
-                    // under that blur a small cover is as good as a big one
-                    sourceSize: Qt.size(64, 64)
-                    source: cover.length > 0 ? "image://art/" + encodeURIComponent(cover) : ""
-                }
-            }
-            Rectangle {
-                id: spotlightMask
-                anchors.fill: parent
-                radius: 22
-                visible: false
-                layer.enabled: true
-                // a point a pixel is plenty for the edge of a faint wash
-                layer.textureSize: Qt.size(Math.ceil(width), Math.ceil(height))
-            }
-            MultiEffect {
-                anchors.fill: parent
-                source: spotlightBlurSource
-                blurEnabled: true
-                blur: 1
-                blurMax: 64
-                saturation: 0.2
-                maskEnabled: true
-                maskSource: spotlightMask
-                opacity: Appearance.colors.dark ? 0.42 : 0.3
-            }
-
-            Item {
-                id: spotlightArt
-                x: spotlight.inset
-                y: spotlight.inset
-                width: spotlight.stacked ? Math.min(144, spotlight.width * 0.4) : 176
-                height: width
-
-                ArtworkGlow {
-                    anchors.fill: parent
-                    source: root.spotlightSong.artworkUrl
-                    intensity: 0.22
-                    glowRadius: 24
-                }
-                ArtworkImage {
-                    anchors.fill: parent
-                    source: root.spotlightSong.artworkUrl
-                    crossfade: true
-                }
-            }
-
-            Column {
-                id: spotlightDetails
-                x: spotlight.stacked ? spotlight.inset : spotlightArt.x + spotlightArt.width + 24
-                y: spotlight.stacked ? spotlightArt.y + spotlightArt.height + spotlight.inset
-                                     : (spotlight.height - implicitHeight) / 2
-                width: Math.max(0, spotlight.width - x - spotlight.inset)
-                spacing: 8
-
-                StyledText {
-                    width: parent.width
-                    elide: Text.ElideRight
-                    text: root.spotlightIsCurrent && Player.playing ? "NOW PLAYING" : "CONTINUE LISTENING"
-                    font.pixelSize: parent.width < 180 ? Appearance.fontSize.smallest : Appearance.fontSize.smaller
-                    font.weight: Font.Bold
-                    font.letterSpacing: 0.7
-                    color: Appearance.colors.primary
-                }
-                // one line, however long the name: the card keeps its shape
-                TitleText {
-                    width: parent.width
-                    text: root.spotlightSong.name
-                    maximumLineCount: 1
-                    wrapMode: Text.NoWrap
-                    elide: Text.ElideRight
-                    font.pixelSize: Appearance.fontSize.headline
-                    font.weight: Font.Bold
-                    font.letterSpacing: -0.5
-                }
-                StyledText {
-                    width: parent.width
-                    text: root.spotlightSong.artists
-                    elide: Text.ElideRight
-                    font.pixelSize: Appearance.fontSize.larger
-                    font.weight: Font.Medium
-                    color: Appearance.colors.onSurfaceVariant
-                }
-                StyledText {
-                    width: parent.width
-                    visible: root.spotlightSong.albumName.length > 0
-                    text: root.spotlightSong.albumName
-                    elide: Text.ElideRight
-                    color: Appearance.colors.outline
-                }
-
-                Row {
-                    id: resume
-                    width: parent.width
-
-                    function play() {
-                        if (root.spotlightIsCurrent) {
-                            Player.togglePlayback()
-                        } else if (Library.recentlyPlayed.count > 0) {
-                            Player.playFromModel(Library.recentlyPlayed, Library.recentlyPlayed.indexOfInstance(root.spotlightSong.instanceId))
-                        } else {
-                            Player.playSong(root.spotlightSong)
+                    width: (quick.width - quick.gap * (quick.columns - 1)) / quick.columns
+                    title: modelData.type === "liked" ? "Favourite Songs"
+                         : modelData.type === "artist" ? artist.name : playlist.name
+                    symbol: modelData.type === "liked" ? "favorite" : ""
+                    artworkUrl: modelData.type === "artist" ? artist.artworkUrl : playlist.artworkUrl
+                    circular: modelData.type === "artist"
+                    placeholderSymbol: modelData.type === "artist" ? "person" : "queue_music"
+                    onClicked: {
+                        switch (modelData.type) {
+                        case "liked": Library.showSavedSongs(); break
+                        case "playlist": Library.selectPlaylist(playlist); break
+                        case "artist": Library.selectArtist(artist); break
                         }
                     }
-
-                    topPadding: 6
-                    spacing: 12
-
-                    // the play button, as in the player, and the song's menu
-                    PlayButton {
-                        anchors.verticalCenter: parent.verticalCenter
-                        implicitWidth: resume.width < 160 ? 36 : 52
-                        implicitHeight: implicitWidth
-                        playing: root.spotlightIsCurrent && Player.playing
-                        tooltip: root.spotlightIsCurrent ? (Player.playing ? "Pause" : "Resume") : "Play"
-                        onClicked: resume.play()
-                    }
-                    IconButton {
-                        anchors.verticalCenter: parent.verticalCenter
-                        symbol: "more_horiz"
-                        size: resume.width < 160 ? 28 : 36
-                        onClicked: SongMenus.open(root.spotlightSong, false)
+                    onPlayRequested: {
+                        switch (modelData.type) {
+                        case "liked": Player.playFromModel(Library.savedSongs, 0); break
+                        case "playlist": Library.playPlaylist(playlist); break
+                        case "artist": Library.playArtist(artist); break
+                        }
                     }
                 }
             }

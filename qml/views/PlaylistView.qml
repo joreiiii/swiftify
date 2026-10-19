@@ -19,16 +19,18 @@ Item {
     }
     readonly property bool filterActive: Library.playlistFilterQuery.trim().length > 0
 
+    // shown or not at once: the page comes in with the page transition, as
+    // Favourite Songs does, rather than springing in again inside it
     EmptyState {
         anchors.centerIn: parent
-        Reveal.shown: !root.playlist.valid
+        visible: !root.playlist.valid
         symbol: "queue_music"
         title: "Playlist Unavailable"
     }
 
     SongListPage {
         anchors.fill: parent
-        Reveal.shown: root.playlist.valid
+        visible: root.playlist.valid
         topInset: Appearance.sizes.topBarHeight
         songs: Library.displayedPlaylistSongs
         loading: Library.loadingSongs
